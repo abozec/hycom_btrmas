@@ -1,0 +1,192 @@
+c
+c --- odd minor time step.
+c
+      ml=n
+      nl=3
+c
+c --- continuity equation, and tidal drag on p-grid
+c
+c --- rhs: pbavg, ubavg+, vbavg+
+c --- lhs: pbavg
+c
+      margin = mbdy - 1
+c
+!$OMP PARALLEL DO PRIVATE(j,i,pbudel,pbvdel,
+!$OMP&                    ubp,vbp,d11,d12,d21,d22,q)
+!$OMP&         SCHEDULE(STATIC,jblk)
+      do j=1-margin,jj+margin
+        do i=1-margin,ii+margin
+          if (SEA_P) then
+#if defined(STOKES)
+c
+c   Barotropic Stokes flow included here
+c
+            pbudel = (ubavg(i+1,j,ml)+usdbavg(i+1,j))*
+     &                    (depthu(i+1,j)*scuy(i+1,j))
+     &              -(ubavg(i,  j,ml)+usdbavg(i,  j))*
+     &                    (depthu(i,  j)*scuy(i,  j))
+            pbvdel = (vbavg(i,j+1,ml)+vsdbavg(i,j+1))*
+     &                    (depthv(i,j+1)*scvx(i,j+1))
+     &              -(vbavg(i,j,  ml)+vsdbavg(i,j  ))*
+     &                    (depthv(i,j  )*scvx(i,j  ))
+#else
+            pbudel =  ubavg(i+1,j,ml)*(depthu(i+1,j)*scuy(i+1,j))
+     &               -ubavg(i  ,j,ml)*(depthu(i  ,j)*scuy(i  ,j))
+            pbvdel =  vbavg(i,j+1,ml)*(depthv(i,j+1)*scvx(i,j+1))
+     &               -vbavg(i,j  ,ml)*(depthv(i,j  )*scvx(i,j  ))
+#endif
+            pbavg(i,j,nl)=
+     &        ((1.-wblpf)*pbavg(i,j,ml)+
+     &             wblpf *pbavg(i,j,nl) )-
+     &         (1.+wblpf)*dlt*(pbudel + pbvdel)*scp2i(i,j)
+c
+            if     (ldrag) then
+c
+c ---         tidal drag tensor on p-grid:
+c ---           ub = ub - (dlt/H)*(t.11*ub + t.12*vb)
+c ---           vb = vb - (dlt/H)*(t.21*ub + t.22*vb)
+c ---         solve implicitly by inverting the matrix:
+c ---            1+(dlt/H)*t.11    (dlt/H)*t.12
+c ---              (dlt/H)*t.21  1+(dlt/H)*t.22
+c ---         use depths (H) rather than onem*pbavg (h) for stability.
+c
+              ubp = 0.5*(ubavg(i+1,j,nl)+ubavg(i,j,nl))
+              vbp = 0.5*(vbavg(i,j+1,nl)+vbavg(i,j,nl))
+              d11 = -dlt/depths(i,j) * drgten(1,1,i,j)
+              d12 = -dlt/depths(i,j) * drgten(1,2,i,j)
+              d21 = -dlt/depths(i,j) * drgten(2,1,i,j)
+              d22 = -dlt/depths(i,j) * drgten(2,2,i,j)
+              q   = 1.0/((1.0-d11)*(1.0-d22)-d12*d21)
+c ---         set util5,util6 to the ubavg,vbavg drag increment
+              util5(i,j) = q*(ubp*(1.0-d22)+vbp*d12) - ubp
+              util6(i,j) = q*(ubp*d21+vbp*(1.0-d11)) - vbp
+c ---         add an explicit antidrag correction
+*             util5(i,j) = util5(i,j) - (d11*untide(i,j)+
+*    &                                   d12*vntide(i,j) )
+*             util6(i,j) = util6(i,j) - (d21*untide(i,j)+
+*    &                                   d22*vntide(i,j) )
+c ---         dissipation per m^2
+              displd(i,j) = displd(i,j) +
+     &                      (ubp*util5(i,j) + vbp*util6(i,j))*
+     &                      depths(i,j)*qthref/dlt
+c
+*             if (ldebug_barotp .and. i.eq.itest.and.j.eq.jtest) then
+*               write (lp,'(i9,2i5,i3,3x,a,4g15.6)')
+*    &            nstep,i+i0,j+j0,lll,
+*    &            'ubp,new,vbp,new =',
+*    &          ubp,ubp+util5(i,j),
+*    &          vbp,vbp+util6(i,j)
+*             endif !debug
+            else
+              util5(i,j) = 0.0
+              util6(i,j) = 0.0
+            endif !ldrag
+          endif !ip
+        enddo !i
+      enddo !j
+c
+      mn=ml
+c
+c --- u momentum equation, 1st
+c
+c --- rhs: pbavg+, vbavg+, pvtrop+
+c --- lhs: ubavg
+c
+      margin = margin - 1
+c
+!$OMP PARALLEL DO PRIVATE(j,i,utndcy)
+!$OMP&         SCHEDULE(STATIC,jblk)
+      do j=1-margin,jj+margin
+        do i=1-margin,ii+margin
+          if (SEA_U) then
+            utndcy=-thref*(pbavg(i,j,nl)-pbavg(i-1,j,nl))*scuxi(i,j)+
+     &       ((vbavg(i  ,j,  mn)*depthv(i  ,j)
+     &        +vbavg(i  ,j+1,mn)*depthv(i  ,j+1))+
+     &        (vbavg(i-1,j,  mn)*depthv(i-1,j)
+     &        +vbavg(i-1,j+1,mn)*depthv(i-1,j+1)))*
+     &       (0.125*(pvtrop(i,j)+pvtrop(i,j+1)))
+c
+            ubavg(i,j,nl)=
+     &        ((1.-wblpf)*ubavg(i,j,ml)+
+     &             wblpf *ubavg(i,j,nl) )+
+     &         (1.+wblpf)*dlt*(utndcy+utotn(i,j))+
+     &                0.5*(util5(i,j)+util5(i-1,j))
+c
+*           if (ldebug_barotp .and. i.eq.itest.and.j.eq.jtest) then
+*             write (lp,'(i9,2i5,i3,3x,a,6g15.6)')
+*    &          nstep,i+i0,j+j0,lll,
+*    &          'u_old,u_new,p_grad,corio,u_star,drag =',
+*    &          ubavg(i,j,ml),ubavg(i,j,nl),
+*    &           -thref*(pbavg(i,j,nl)-pbavg(i-1,j,nl))*scuxi(i,j)*dlt,
+*    &          (vbavg(i  ,j,  mn)*depthv(i  ,j)
+*    &          +vbavg(i  ,j+1,mn)*depthv(i  ,j+1)
+*    &          +vbavg(i-1,j,  mn)*depthv(i-1,j)
+*    &          +vbavg(i-1,j+1,mn)*depthv(i-1,j+1))
+*    &          *(pvtrop(i,j)+pvtrop(i,j+1))
+*    &          *.125 * dlt,utotn(i,j) * dlt,
+*    &          0.5*(util5(i,j)+util5(i-1,j))
+*           endif !debug
+          endif !iu
+        enddo !i
+      enddo !j
+c
+      mn = nl
+c
+c --- v momentum equation, 2nd
+c --- rhs: pbavg+, ubavg+, pvtrop+
+c --- lhs: vbavg
+c
+      margin = margin - 1
+c
+!$OMP PARALLEL DO PRIVATE(j,i,vtndcy)
+!$OMP&         SCHEDULE(STATIC,jblk)
+      do j=1-margin,jj+margin
+        do i=1-margin,ii+margin
+          if (SEA_V) then
+            vtndcy=-thref*(pbavg(i,j,nl)-pbavg(i,j-1,nl))*scvyi(i,j)-
+     &       ((ubavg(i,  j  ,mn)*depthu(i,  j  )
+     &        +ubavg(i+1,j  ,mn)*depthu(i+1,j  ))+
+     &        (ubavg(i,  j-1,mn)*depthu(i,  j-1)
+     &        +ubavg(i+1,j-1,mn)*depthu(i+1,j-1)))*
+     &       (0.125*(pvtrop(i,j)+pvtrop(i+1,j)))
+c
+            vbavg(i,j,nl)=
+     &        ((1.-wblpf)*vbavg(i,j,ml)+
+     &             wblpf *vbavg(i,j,nl) )+
+     &         (1.+wblpf)*dlt*(vtndcy+vtotn(i,j))+
+     &                0.5*(util6(i,j)+util6(i,j-1))
+c
+*           if (ldebug_barotp .and. i.eq.itest.and.j.eq.jtest) then
+*             write (lp,'(i9,2i5,i3,3x,a,6g15.6)')
+*    &          nstep,i+i0,j+j0,lll,
+*    &          'v_old,v_new,p_grad,corio,v_star,drag =',
+*    &          vbavg(i,j,ml),vbavg(i,j,nl),
+*    &          -thref*(pbavg(i,j,nl)-pbavg(i,j-1,nl))*scvyi(i,j)*dlt,
+*    &          -(ubavg(i,  j  ,mn)*depthu(i,j  )
+*    &           +ubavg(i+1,j  ,mn)*depthu(i+1,j  )
+*    &           +ubavg(i,  j-1,mn)*depthu(i,j-1)
+*    &           +ubavg(i+1,j-1,mn)*depthu(i+1,j-1))
+*    &          *(pvtrop(i,j)+pvtrop(i+1,j))
+*    &          *.125 * dlt, vtotn(i,j) * dlt,
+*    &          0.5*(util6(i,j)+util6(i,j-1))
+*           endif !debug
+          endif !iv
+        enddo !i
+      enddo !j
+c
+      if     (ldebug_barotp) then
+        call xcsync(flush_lp)
+      endif
+c
+#if ! defined(RELO)
+      if     (lbflag.eq.1) then
+        call latbdp( nl)
+      elseif (lbflag.eq.3) then
+        call latbdf( nl,lll)
+      endif
+#endif
+      if     (lbflag.eq.2) then
+        call latbdt( nl,lll)
+      elseif (lbflag.eq.4) then
+        call latbdtf(nl,lll)
+      endif
