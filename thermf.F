@@ -26,6 +26,8 @@ c --- ----------------------------------------------------------
 c
       integer i,j,k,l
       real*8  d1,d2
+!!Alex add t1mean to calculate the  salt flux normalization
+      real*8  t1mean
 c
 !$OMP PARALLEL DO PRIVATE(j,i)
 !$OMP&         SCHEDULE(STATIC,jblk)
@@ -80,6 +82,7 @@ c
         endif !iceflg
 
 
+!!Alex we move down the calcualtion of pbavg
         if     (epmass) then
           do i=1,ii
             if (SEA_P) then    
@@ -100,6 +103,39 @@ c ---         change total water depth by the water exchanged with the atmos.
 
 !$OMP END PARALLEL DO
 c
+!!Alex Remove the horizontal mean of salflx
+!      call xcsum(d2, util2,ip)
+!      t1mean=d2/area
+!!$OMP   PARALLEL DO PRIVATE(j,k,l,i)
+!!$OMP&           SCHEDULE(STATIC,jblk)
+!      do j=1,jj
+!          do i=1,ii
+!            if (SEA_P) then
+!            salflx(i,j) = salflx(i,j)-t1mean
+!            util2(i,j)  = salflx(i,j)*scp2(i,j)
+!            endif !ip
+!        enddo
+!
+!       if     (epmass) then
+!            do i=1,ii
+!            if (SEA_P) then
+!c ---         change total water depth by the water exchanged with the atmos.
+!              if     (btrlfr) then
+!                pbavg(i,j,n) = pbavg(i,j,n)-
+!     &                         onem*    delt1*salflx(i,j)/
+!     &                                         (saln(i,j,1,n)*qthref)
+!              else
+!                pbavg(i,j,n) = pbavg(i,j,n)-
+!     &                         onem*0.5*delt1*salflx(i,j)/
+!     &                                         (saln(i,j,1,n)*qthref)
+!              endif !btrlfr:else
+!            endif !ip
+!            enddo               !i
+!        endif !epmass
+!      enddo !j
+!!$OMP   END PARALLEL DO
+!!Alex
+
       call xcsum(d1, util1,ipa)
       call xcsum(d2, util2,ipa)
       watcum=watcum+d1
@@ -653,7 +689,7 @@ c
       integer i,ihr,it_a,ilat
       real    radfl,swfl,sstrlx,wind,airt,vpmx,prcp,xtau,ytau,
      &        evap,evape,emnp,esst,sssf,
-     &        snsibl,dsgdt,sssc,sssdif,sstdif,rmus,rmut
+     &        snsibl,dsgdt,sssc,sssdif,sstdif
       real    cd0,clh,cl0,cl1,csh,
      &        pair,rair,slat,ssen,tdif,tsur,wsph,
      &        tamts,q,qva,va
@@ -805,10 +841,10 @@ c --- qra is 1/rair
       qsatur5(t,qra)= 0.98*qra*6.40380e5*exp(-5107.4/(t+tzero))
 c
 c --- salinity relaxation coefficient
-      rmus=1./(30.0*86400.0)  !1/30 days
+!!Alex      rmus=1./(30.0*86400.0)  !1/30 days
 c
 c --- temperature relaxation coefficient
-      rmut=1./(30.0*86400.0)  !1/30 days
+!!Alex      rmut=1./(30.0*86400.0)  !1/30 days
 c
 c --- ------------------------------------------------------
 c --- thermal forcing of ocean surface (positive into ocean)
@@ -1355,7 +1391,8 @@ c ---   in shallow water this is (dpmixl(i,j,n)/p(i,j,kk+1)  )/rmut
      &               temp(i,j,1,n)
           endif !natm
         endif
-        sstrlx=(rmut*spcifh*min(p(i,j,kk+1),thkmlt*onem)/g)*sstdif
+!!Alex add rmut in 2d
+        sstrlx=(rmut(i,j)*spcifh*min(p(i,j,kk+1),thkmlt*onem)/g)*sstdif
         surflx(i,j)=surflx(i,j)+sstrlx
         sstflx(i,j)=sstflx(i,j)+sstrlx
       endif !sstflg
@@ -1411,7 +1448,8 @@ c
      &               (1.0-covice(i,j))*   sssrmx(i,j)  !limit relaxation
           endif
         endif
-        sssflx(i,j)=(rmus*min(p(i,j,kk+1),thkmls*onem)/g)*sssdif
+!!Alex add rmus in 2d
+        sssflx(i,j)=(rmus(i,j)*min(p(i,j,kk+1),thkmls*onem)/g)*sssdif
 *       salflx(i,j)=salflx(i,j)+sssflx(i,j) !update salflx in thermf_oi
       else
         sssflx(i,j)=0.0

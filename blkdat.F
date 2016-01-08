@@ -77,14 +77,14 @@ c --- 'jdm   ' = latitudinal  array size
       call blkini(itest ,'idm   ')
       call blkini(jtest ,'jdm   ')
 c
-      if     (itdm.eq.-1) then !serial relo case only
-        itdm = itest
-        idm  = itest
-        ii   = itest
-        jtdm = jtest
-        jdm  = jtest
-        jj   = jtest
-      endif
+!      if     (itdm.eq.-1) then !serial relo case only !!ALex does not work without relo
+!        itdm = itest
+!        idm  = itest
+!        ii   = itest
+!        jtdm = jtest
+!        jdm  = jtest
+!        jj   = jtest
+!      endif
 c
       if     (itest.ne.itdm) then
         if (mnproc.eq.1) then
@@ -570,6 +570,7 @@ c ---             (-2=366Jan1 with 732-day forcing repeat)
 c ---             ( 4=actual with forcing constant between inputs)
 c --- 'sshflg' = diagnostic SSH flag (0=SSH,1=SSH&stericSSH)
 c ---             note that sshflg==1 implies reading relax.ssh.a
+c --- 'arcflg' = archive flag (0=Binary[ab],1=Netcdf[nc]) !!Alex
 c --- 'dsurfq' = number of days between model diagnostics at the surface
 c ---             (-ve to output only the .txt file at itest,jtest)
 c --- 'diagfq' = number of days between model diagnostics
@@ -594,6 +595,7 @@ c --- 'batrop' = barotropic time step (seconds), int. divisor of baclin/2
       endif !1st tile
       call blkini(yrflag,'yrflag')
       call blkini(sshflg,'sshflg')
+      call blkini(arcflg,'arcflg') !!Alex
       call blkinr(dsurfq,'dsurfq','(a6," =",f10.4," days")')
       call blkinr(diagfq,'diagfq','(a6," =",f10.4," days")')
       call blkinr(proffq,'proffq','(a6," =",f10.4," days")')
@@ -616,7 +618,9 @@ c
       elseif (yrflag.eq. 2) then
         wndrep = 366.0d0  !one year forcing repeat period
       elseif (yrflag.eq. 4) then
-        yrflag = 3
+!!        yrflag = 3 !!Alex 
+        yrflag = 2 !!Alex 
+        wndrep = 366.0d0  !one year forcing repeat period !!Alex
         forcw0 = .true.   !forcing constant between inputs
       endif
 #if defined(RELO)
@@ -1024,15 +1028,16 @@ c
         call xcstop('(blkdat)')
                stop '(blkdat)'
       endif
-      if (thkdf2.ne.0.0 .and. thkdf4.ne.0.0) then
-        if (mnproc.eq.1) then
-        write(lp,'(/ a /)') 
-     &    'error - only one of thkdf2 and thkdf4 can be non-zero'
-        call flush(lp)
-        endif !1st tile
-        call xcstop('(blkdat)')
-               stop '(blkdat)'
-      endif
+!!Alex remove flag for thkdf2.ne.0.0 .and. thkdf4.ne.0.0
+!      if (thkdf2.ne.0.0 .and. thkdf4.ne.0.0) then
+!        if (mnproc.eq.1) then
+!        write(lp,'(/ a /)') 
+!     &    'error - only one of thkdf2 and thkdf4 can be non-zero'
+!        call flush(lp)
+!        endif !1st tile
+!        call xcstop('(blkdat)')
+!               stop '(blkdat)'
+!      endif
       if (isopyc .and. temdfc.ne.0.0) then
         if (mnproc.eq.1) then
         write(lp,'(/ a /)') 
@@ -1662,8 +1667,10 @@ c --- 'dswflg' = diurnal shortwv flag   (0=none,1=daily to diurnal correction)
 c --- 'albflg' = ocean albedo    flag   (0=none,1=const,2=L&Y)
 c --- 'sssflg' = SSS relaxation  flag   (0=none,1=clim,-1=clim&rmx)
 c ---              see thermf.f for a description of sssrmx
+c --- 'sssrmu' = SSS relaxation (# days of relaxation; -ve spatially varying ) !!Alex
 c --- 'lwflag' = longwave corr.  flag   (0=none,1=clim,2=nwp,-1=lwdn), sst-based
 c --- 'sstflg' = SST relaxation  flag   (0=none,1=clim,2=atmos,3=observed)
+c --- 'sstrmu' = SST relaxation (# days of relaxation; -ve spatially varying ) !!Alex
 c --- 'icmflg' = ice mask        flag   (0=none,1=clim,2=atmos,3=obs/coupled)
 c --- 'prsbas' = msl prs is input field + prsbas (Pa)
 c --- 'mslprf' = msl prs forcing flag   (0=F,1=T)
@@ -1681,8 +1688,10 @@ c --- 'flxsmo' = smooth surface fluxes  (0=F,1=T)
       call blkini(dswflg,'dswflg')
       call blkini(albflg,'albflg')
       call blkini(sssflg,'sssflg')
+      call blkinr(sssrmu,'sssrmu','(a6," =",f10.4," days")')  !!Alex
       call blkini(lwflag,'lwflag')
       call blkini(sstflg,'sstflg')
+      call blkinr(sstrmu,'sstrmu','(a6," =",f10.4," days")')  !!Alex
       call blkini(icmflg,'icmflg')
       call blkinr(prsbas,'prsbas','(a6," =",f10.1," Pa")')
       call blkinl(mslprf,'mslprf')

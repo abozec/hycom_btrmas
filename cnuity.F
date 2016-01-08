@@ -849,6 +849,8 @@ c
               endif
 c
 c-------------thkdfu = delt1*thkdf4*(aspux(i,j)**3)*scuy(i,j)
+!!Alex add if statement to do calculation only if thkdf4.ne.0.
+              if (thkdf4u(i,j).ne.0.) then
               thkdfu = delt1*thkdf4u(i,j)
               uflux(i,j)=min( flxhi,
      &                        max( flxlo,
@@ -856,6 +858,7 @@ c-------------thkdfu = delt1*thkdf4*(aspux(i,j)**3)*scuy(i,j)
      &                               (util1(i-1,j)-util1(i,j)) ) )
               uflx(i,j,k-1)=uflx(i,j,k-1)+uflux(i,j)*dtinv
               uflx(i,j,k  )=uflx(i,j,k  )-uflux(i,j)*dtinv
+              endif ! thkdf4u.ne.0. !!Alex
             endif !iu
           enddo !i
 c
@@ -881,6 +884,8 @@ c
               endif
 c
 c-------------thkdfv = delt1*thkdf4*(aspvy(i,j)**3)*scvx(i,j)
+!!Alex add if statement to do calculation only if thkdf4.ne.0.
+              if (thkdf4v(i,j).ne.0.) then
               thkdfv = delt1*thkdf4v(i,j)
               vflux(i,j)=min( flxhi,
      &                        max( flxlo,
@@ -888,6 +893,7 @@ c-------------thkdfv = delt1*thkdf4*(aspvy(i,j)**3)*scvx(i,j)
      &                               (util2(i,j-1)-util2(i,j)) ) )
               vflx(i,j,k-1)=vflx(i,j,k-1)+vflux(i,j)*dtinv
               vflx(i,j,k  )=vflx(i,j,k  )-vflux(i,j)*dtinv
+              endif ! thkdf4v.ne.0. !!Alex
             endif !iv
           enddo !i
         enddo !j
@@ -1020,13 +1026,17 @@ c
             if (SEA_U) then
               flxhi= .25*(p(i  ,j,kk+1)-p(i  ,j,k))*scp2(i  ,j)
               flxlo=-.25*(p(i-1,j,kk+1)-p(i-1,j,k))*scp2(i-1,j)
-              thkdfu = delt1*thkdf2*aspux(i,j)
+!!Alex add if statement to do calculation only if thkdf2.ne.0.
+!              thkdfu = delt1*thkdf2*aspux(i,j)
+              if (thkdf2u(i,j).ne.0.) then
+              thkdfu = delt1*thkdf2u(i,j)
               uflux(i,j)=min(flxhi,
      &                       max(flxlo,
      &                           thkdfu*
      &                            (p(i-1,j,k)-p(i,j,k))*scuy(i,j)))
               uflx(i,j,k-1)=uflx(i,j,k-1)+uflux(i,j)*dtinv
               uflx(i,j,k  )=uflx(i,j,k  )-uflux(i,j)*dtinv
+              endif ! thkdf2.ne.0. !!Alex
             endif !iu
           enddo !i
 c
@@ -1034,13 +1044,17 @@ c
             if (SEA_V) then
               flxhi= .25*(p(i,j  ,kk+1)-p(i,j  ,k))*scp2(i,j  )
               flxlo=-.25*(p(i,j-1,kk+1)-p(i,j-1,k))*scp2(i,j-1)
-              thkdfv = delt1*thkdf2*aspvy(i,j)
+!!Alex add if statement to do calculation only if thkdf2.ne.0.
+!              thkdfv = delt1*thkdf2*aspvy(i,j)
+              if (thkdf2v(i,j).ne.0.) then
+              thkdfv = delt1*thkdf2v(i,j)
               vflux(i,j)=min(flxhi,
      &                       max(flxlo,
      &                           thkdfv*
      &                            (p(i,j-1,k)-p(i,j,k))*scvx(i,j)))
               vflx(i,j,k-1)=vflx(i,j,k-1)+vflux(i,j)*dtinv
               vflx(i,j,k  )=vflx(i,j,k  )-vflux(i,j)*dtinv
+              endif ! thkdf2.ne.0. !!Alex
             endif !iv
           enddo !i
         enddo !j

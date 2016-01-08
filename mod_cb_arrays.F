@@ -128,6 +128,8 @@ c
      & veldf2v,       ! v-grid laplacian  diffusion coefficient
      & veldf4u,       ! u-grid biharmonic diffusion coefficient
      & veldf4v,       ! v-grid biharmonic diffusion coefficient
+     & thkdf2u,       ! u-grid Laplacian  diffusion coefficient !!Alex
+     & thkdf2v,       ! v-grid Laplacian  diffusion coefficient !!Alex
      & thkdf4u,       ! u-grid biharmonic diffusion coefficient
      & thkdf4v,       ! v-grid biharmonic diffusion coefficient
      & cbp,           ! p-grid quadratic bottom friction coefficient
@@ -412,7 +414,9 @@ c ---  (kkwall and kknest are either kdm or, if inactive, 1).
      & rmu,           ! weights for   s.w.b.c. relax
      & rmunp,         ! weights for p.n.w.b.c. relax
      & rmunv,         ! weights for v.n.w.b.c. relax
-     & rmutra         ! weights for tracr.b.c. relax (maximum of all tracers)
+     & rmutra,        ! weights for tracr.b.c. relax (maximum of all tracers)
+     & rmus,          ! weights for   sss relax !!Alex
+     & rmut           ! weights for   sst relax !!Alex
 
 #if defined(RELO)
       real, save, allocatable, dimension(:,:,:) ::
@@ -688,6 +692,9 @@ c --- 'lwflag' = longwave corr.  flag (0=none,1=clim,2=atmos), sst-based
 c --- 'sstflg' = SST relaxation  flag (0=none,1=clim,2=atmos,3=obs)
 c --- 'icmflg' = ice mask        flag (0=none,1=clim,2=atmos,3=obs)
 c --- 'difsmo' = KPROF: number of layers with horiz smooth diff coeffs
+c --- 'sssrmu' = SSS relaxation (# days of relaxation; -ve spatially varying ) !!Alex
+c --- 'sstrmu' = SST relaxation (# days of relaxation; -ve spatially varying ) !!Alex
+c --- 'arcflg' = archive flag (0=Binary[ab],1=Netcdf[nc]) !!Alex
 c
 #if defined(RELO)
       real, save, allocatable, dimension(:) ::
@@ -710,7 +717,8 @@ c
      &               thkmls,thkmlt,thkriv,thkmin,bldmin,bldmax,thkbot,
      &               thkcdw,thkfrz,tfrz_0,tfrz_s,ticegr,hicemn,hicemx,
      &               dp00,dp00f,dp00x,ds00,ds00f,ds00x,dp00i,isotop,
-     &               sigjmp,tmljmp,prsbas
+     &               sigjmp,tmljmp,prsbas,
+     &               sssrmu, sstrmu !!Alex
 c
       integer, save ::
      &               tsofrq,mixfrq,icefrq,icpfrq,nhybrd,nsigma,
@@ -721,7 +729,8 @@ c
      &               iversn,iexpt,jerlv0,
      &               iceflg,ishelf,icmflg,wndflg,ustflg,
      &               flxflg,empflg,dswflg,albflg,lwflag,sstflg,sssflg,
-     &               difsmo,disp_count
+     &               difsmo,disp_count,
+     &               arcflg
 c
       real,    parameter ::
      &  g     =   9.806,      !gravitational acceleration (m/s**2)
@@ -759,7 +768,27 @@ c
 c --- diurnal cycle factor for short wave heat flux
       integer, save :: nsteps_per_day,nsteps_today
 c
-
+!!Alex Netcdf output
+c --- netcdf output
+#if defined(RELO)
+      real*8,save,allocatable, dimension(:,:,:) ::
+#else
+      real*8,save,dimension(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm) ::
+#endif
+     &  work1
+#if defined(RELO)
+      real*8,save,allocatable, dimension(:,:,:) ::
+#else
+      real*8,save,dimension(itdm,jtdm,kdm) ::
+#endif
+     &  worknc2
+#if defined(RELO)
+      real*8,save,allocatable, dimension(:,:) ::
+#else
+      real*8,save,dimension(itdm,jtdm) ::
+#endif
+     &  worknc1
+      
       contains
 
       subroutine cb_allocate
@@ -967,6 +996,8 @@ c
      &       veldf4v(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &       thkdf4u(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &       thkdf4v(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &       thkdf2u(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &       thkdf2v(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy), 
      &           cbp(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &         cbarp(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &          pgfx(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
@@ -988,7 +1019,7 @@ c
      &     tidepg_mn(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &     displd_mn(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &     dispqd_mn(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) )
-      call mem_stat_add( 60*(idm+2*nbdy)*(jdm+2*nbdy) )
+      call mem_stat_add( 62*(idm+2*nbdy)*(jdm+2*nbdy) )
 #endif
                util1 = r_init
                util2 = r_init
@@ -1027,6 +1058,8 @@ c
              veldf2v = r_init
              veldf4u = r_init
              veldf4v = r_init
+             thkdf2u = r_init !!Alex
+             thkdf2v = r_init !!Alex
              thkdf4u = r_init
              thkdf4v = r_init
                  cbp = r_init
@@ -1101,8 +1134,8 @@ c
                  vib = r_init
                 pbot = r_init
                sgain = r_init
-               surtx = r_init
-               surty = r_init
+               surtx = 0.    !!Alex
+               surty = 0.    !!Alex
               surflx = r_init
               sswflx = r_init
               mixflx = r_init
@@ -1118,16 +1151,16 @@ c
               thkice = r_init
               covice = r_init
               temice = r_init
-              flxice = r_init
-              fswice = r_init
-              sflice = r_init
+              flxice = 0. 
+              fswice = 0.
+              sflice = 0.
                 si_c = r_init
                 si_h = r_init
                 si_t = r_init
                 si_u = r_init
                 si_v = r_init
-               si_tx = r_init
-               si_ty = r_init
+               si_tx = 0.
+               si_ty = 0.
 c
       if     (flxflg.eq.6) then
 #if defined(RELO)
@@ -1307,13 +1340,17 @@ c
      &          rmu(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &        rmunp(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &        rmunv(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
-     &       rmutra(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) )
-      call mem_stat_add( 5*(idm+2*nbdy)*(jdm+2*nbdy) )
+     &       rmutra(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &         rmus(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &         rmut(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) )
+      call mem_stat_add( 7*(idm+2*nbdy)*(jdm+2*nbdy) )
 #endif
                 rmu = r_init
               rmunp = r_init
               rmunv = r_init
              rmutra = r_init
+               rmut = r_init !!Alex
+               rmus = r_init !!Alex
 c
       if     (ntracr.gt.0) then
 #if defined(RELO)
@@ -1386,6 +1423,22 @@ c
             ssb = r_init
       endif !mxlgiss
 c
+      if     (arcflg.eq.1) then !!Alex Netcdf output
+#if defined(RELO)
+        allocate( worknc1(itdm,jtdm) )
+        call mem_stat_add( (itdm*jtdm) )
+
+        allocate( worknc2(itdm,jtdm,kdm) )
+        call mem_stat_add( (itdm*jtdm*kdm) )
+
+        allocate(   work1(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm) ) 
+        call mem_stat_add(     (idm+2*nbdy)*(jdm+2*nbdy)*kdm )
+#endif
+        worknc1  = r_init
+        worknc2  = r_init
+        work1    = r_init
+      endif ! arcflg
+      
       end subroutine cb_allocate
 
       end module mod_cb_arrays

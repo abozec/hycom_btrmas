@@ -51,7 +51,9 @@ c
       logical, parameter :: lpipe_momtum=.false.      !usually .false.
 
 
-      real,    parameter :: dragw_rho=0.01072d0*1026.0d0  !ice-ocean drag from CICE
+!!Alex      real,    parameter :: dragw_rho=0.01072d0*1026.0d0  !ice-ocean drag from CICE (2x default)
+      real,    parameter :: dragw_rho=0.00536d0*1026.0d0  !ice-ocean dragfrom CICE (default)
+
       real,    parameter ::     pairc=1013.0d0*100.0d0    !air pressure (Pa)
       real,    parameter ::      rgas=287.1d0           !gas constant (j/kg/k)
       real,    parameter ::     tzero=273.16d0          !celsius to kelvin offset
@@ -147,20 +149,20 @@ c
      &                             +kappaf(temp(i,j,k,m),
      &                                     saln(i,j,k,m),
      &                                     th3d(i,j,k,m)+thbase,
-     &                             0.5*(p(i,j,k)+p(i,j,k+1)),
+     &                                0.5*(p(i,j,k)+p(i,j,k+1)), !!!Alex
      &                                     kapref)
                 else
                   thstar(i,j,k,1)=th3d(i,j,k,m)
      &                             +kappaf(temp(i,j,k,m),
      &                                     saln(i,j,k,m),
      &                                     th3d(i,j,k,m)+thbase,
-     &                             0.5*(p(i,j,k)+p(i,j,k+1)),
+     &                                0.5*(p(i,j,k)+p(i,j,k+1)), !!!Alex
      &                                     2)
                   thstar(i,j,k,2)=th3d(i,j,k,m)
      &                             +kappaf(temp(i,j,k,m),
      &                                     saln(i,j,k,m),
      &                                     th3d(i,j,k,m)+thbase,
-     &                             0.5*(p(i,j,k)+p(i,j,k+1)),
+     &                                0.5*(p(i,j,k)+p(i,j,k+1)), !!!Alex
      &                                     kapi(i,j))
 #if defined KEY_SIGMA_TRUE
                  thstar(i,j,k,2) = qthref - thbase -

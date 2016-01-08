@@ -2,6 +2,7 @@
       use mod_xc         ! HYCOM communication interface
       use mod_cb_arrays  ! HYCOM saved arrays
       use mod_za         ! HYCOM I/O interface
+      use mod_nc  ! netcdf interface for debug purposes !!Alex
 c
       implicit none
 c
@@ -20,7 +21,8 @@ c
       integer, parameter, private :: nfields=19  !no. fields in surface archive
       character*6, save,  private :: c_arch(nfields) !field names
       logical,     save,  private :: l_arch(nfields) !field output flags
-c
+c      
+
       private archiv_prof_out
 
       contains
@@ -96,6 +98,7 @@ c
       character*80 cformat,flnmarcvs
       integer      i,j,k,ktr,ldot,nop,nopa
       real         coord,xmin,xmax
+      character*80 filenc,filenc_date !!Alex for Netcdf output
 c
       if     (kkout.eq.1) then
         flnmarcvs = flnmarcs
@@ -126,6 +129,87 @@ c ---   indicate the archive time step
       endif
       nopa=13
       nop =13+uoff
+
+      if (arcflg.eq.1) then !!Alex
+
+          if     ((kkout.eq.1 .and. dsurfq.ge.1.0/24.0) .or.
+     &            (kkout.gt.1 .and. diagfq.ge.1.0/24.0)     ) then
+c ---   indicate the archive date
+              write(filenc_date,'(i4.4,a1,i3.3,a1,i2.2)')
+     &            iyear,'_',iday,'_',ihour
+          else
+c ---   indicate the archive time step
+              write(filenc_date,'(i11.11)') nstep
+          endif
+
+! ---   output netcdf                !!Alex
+! ---   ssh          
+          write(filenc,'(a,a,a)') 'srfhgt_',trim(filenc_date),'.nc'
+          call ncput_2d(srfhgt/g,'ssh',trim(filenc))
+
+! ---   sst          
+          write(filenc,'(a,a,a)') 'sursst_',trim(filenc_date),'.nc'
+          call ncput_2d(temp(:,:,1,n),'sst',trim(filenc))
+
+! ---   sss          
+          write(filenc,'(a,a,a)') 'sursss_',trim(filenc_date),'.nc'
+          call ncput_2d(saln(:,:,1,n),'sss',trim(filenc))
+          
+! ---   surflx
+          write(filenc,'(a,a,a)') 'surflx_',trim(filenc_date),'.nc'
+          call ncput_2d(surflx,'surflx',trim(filenc))
+
+! ---   salflx
+          write(filenc,'(a,a,a)') 'salflx_',trim(filenc_date),'.nc'
+          call ncput_2d(salflx,'salflx',trim(filenc))
+          
+! ---   surtax
+          write(filenc,'(a,a,a)') 'surtax_',trim(filenc_date),'.nc'
+          call ncput_2d(surtx,'surtx',trim(filenc))
+
+! ---   surtay
+          write(filenc,'(a,a,a)') 'surtay_',trim(filenc_date),'.nc'
+          call ncput_2d(surty,'surty',trim(filenc))
+
+! ---   usurf
+          write(filenc,'(a,a,a)') 'utsurf_',trim(filenc_date),'.nc'
+          call ncput_2d(u(:,:,1,n)+ubavg(:,:,n),'usurf',trim(filenc))
+
+! ---   vsurf
+          write(filenc,'(a,a,a)') 'vtsurf_',trim(filenc_date),'.nc'
+          call ncput_2d(v(:,:,1,n)+vbavg(:,:,n),'vsurf',trim(filenc))
+          
+!! ---   h
+!          work1=dp(:,:,:,n)/onem
+!          write(filenc,'(a,a,a)') 'thick_',trim(filenc_date),'.nc'
+!          call ncput_3d(work1,'h',trim(filenc))          
+!! ---   temp
+!          work1=temp(:,:,:,n)
+!          write(filenc,'(a,a,a)') 'pottem_',trim(filenc_date),'.nc'
+!          call ncput_3d(work1,'temp',trim(filenc))
+!          
+!! ---   saln
+!          work1=saln(:,:,:,n)
+!          write(filenc,'(a,a,a)') 'salnty_',trim(filenc_date),'.nc'
+!          call ncput_3d(work1,'saln',trim(filenc))
+!
+!! ---   utot
+!          do k=1,kdm 
+!            work1(:,:,k)=u(:,:,k,n)+ubavg(:,:,n)
+!          enddo 
+!          write(filenc,'(a,a,a)') 'uvltot_',trim(filenc_date),'.nc'
+!          call ncput_3d(work1,'utot',trim(filenc))
+!          
+!! ---   vtot
+!          do k=1,kdm 
+!            work1(:,:,k)=v(:,:,k,n)+vbavg(:,:,n)
+!          enddo 
+!          write(filenc,'(a,a,a)') 'vvltot_',trim(filenc_date),'.nc'
+!          call ncput_3d(work1,'vtot',trim(filenc))
+      
+      else ! .not. archv_netcdf
+
+      
 c
 c --- no .[ab] files for 1-D cases (<=6x6) or for dsur1p surface cases.
 c
@@ -441,6 +525,7 @@ c
         close (unit=nop)
       endif !test point tile
 c
+      endif ! .not. archv_netcdf !!Alex
       call xcsync(no_flush)
 cccc
 cccc --- output to line printer

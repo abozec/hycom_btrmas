@@ -128,7 +128,9 @@ c --- private message passing buffers, used by more than one routine
      &   at    ! xcaget and xcaput
       real*4, save, private, dimension(itdm,jdm) ::
      &   al4   ! xcaget4 and xcaput4
-      real*4, save, private, dimension(idm*jdm,jpr) ::
+!      real*4, save, private, dimension(idm*jdm,jpr) :: !!Alex does not work
+!     &   alt4  ! xcaget4 and xcaput4
+      real*4, save, private, allocatable, dimension(:,:) ::
      &   alt4  ! xcaget4 and xcaput4
       real*4, save, private, dimension(idm*jdm) ::
      &   at4   ! xcaget4 and xcaput4

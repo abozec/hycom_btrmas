@@ -1680,6 +1680,123 @@ c
       return
       end
 c
+!!Alex forfunrs added fro spatially varying surface relaxation
+      subroutine forfunrs
+      use mod_xc         ! HYCOM communication interface
+      use mod_cb_arrays  ! HYCOM saved arrays
+      use mod_za         ! HYCOM I/O interface
+      implicit none
+c
+c --- initialize input of salinity/tracer relaxation forcing fields
+c
+c --- rmus    is a single field specifying 1 / e-folding time (1/s)
+c ---         set to zero where there is no sss  relaxation
+c --- I/O and array I/O unit  915 is used but not reserved.
+c
+c --- all input fields much be defined at all grid points
+c
+c
+      character preambl(5)*79
+      integer   lgth
+      integer   i,j,k,ktr,ios
+      character cline*80
+      real tot
+c
+      lgth = len_trim(flnmforw)
+c
+c
+c --- read fields needed for boundary and surface relaxation
+c
+      if (sssrmu.lt.0.) then 
+c
+c --- initialize all rmu fields to zero
+c
+          rmus(:,:) = 0.0  !needed for thermf
+          if     (mnproc.eq.1) then
+              write (lp,*) ' now opening SSS relaxation fields ...'
+          endif                 !1st tile
+          call xcsync(flush_lp)
+c
+          call zaiopf(flnmforw(1:lgth)//'relax.sssrlx.a', 'old', 915)
+          if     (mnproc.eq.1) then ! .b file from 1st tile only
+           open (unit=uoff+915,file=flnmforw(1:lgth)//'relax.sssrlx.b',
+     &             status='old', action='read')
+          endif
+          call zagetc(cline,ios, uoff+915) !1st line of the header on all tiles
+          if     (mnproc.eq.1) then ! .b file from 1st tile only
+              rewind uoff+915
+              read (uoff+915,'(a79)') preambl
+          endif                 !1st tile
+          call preambl_print(preambl)
+          call rdmonth(rmus, 915)
+
+          if     (mnproc.eq.1) then ! .b file from 1st tile only
+              close (unit=uoff+915)
+          endif
+          call zaiocl(915)
+!$OMP PARALLEL DO PRIVATE(j,i)
+!$OMP&         SCHEDULE(STATIC,jblk)
+          do j= 1,jj
+            do i= 1,ii
+              if (rmus(i,j).ne.0.) then
+                rmus(i,j)=1/max(rmus(i,j)*86400.,epsil) !! put the relaxation time in 1/s
+              endif
+            enddo !i
+          enddo !j
+!$OMP END PARALLEL DO
+      call xctilr(rmus,1,1, nbdy,nbdy, halo_ps)
+      endif 
+
+      if (sstrmu.lt.0.) then 
+c
+c --- initialize all rmu fields to zero
+c
+          rmut(:,:) = 0.0  !needed for thermf
+          if     (mnproc.eq.1) then
+              write (lp,*) ' now opening SST relaxation fields ...'
+          endif                 !1st tile
+          call xcsync(flush_lp)
+c
+          call zaiopf(flnmforw(1:lgth)//'relax.sstrlx.a', 'old', 915)
+          if     (mnproc.eq.1) then ! .b file from 1st tile only
+            open (unit=uoff+915,file=flnmforw(1:lgth)//'relax.sstrlx.b',
+     &          status='old', action='read')
+          endif
+          call zagetc(cline,ios, uoff+915) !1st line of the header on all tiles
+          if     (mnproc.eq.1) then ! .b file from 1st tile only
+              rewind uoff+915
+              read (uoff+915,'(a79)') preambl
+          endif                 !1st tile
+          call preambl_print(preambl)
+          call rdmonth(rmut, 915)
+
+          if     (mnproc.eq.1) then ! .b file from 1st tile only
+              close (unit=uoff+915)
+          endif
+          call zaiocl(915)
+!$OMP PARALLEL DO PRIVATE(j,i)
+!$OMP&         SCHEDULE(STATIC,jblk)
+          do j= 1,jj
+            do i= 1,ii
+              if (rmut(i,j).ne.0.) then
+                rmut(i,j)=1/max(rmut(i,j)*86400.,epsil) !! put the relaxation time in 1/s
+              endif
+            enddo !i
+          enddo !j
+!$OMP END PARALLEL DO
+
+          call xctilr(rmut  ,1,1, nbdy,nbdy, halo_ps)
+      endif
+      
+      if     (mnproc.eq.1) then
+      write (lp,*) ' ...finished opening SSS/SST relaxation field'
+      endif !1st tile
+      call xcsync(flush_lp)
+c
+      return
+      end
+c
+!!Alex      
 c
       subroutine forfuns
       use mod_xc         ! HYCOM communication interface
@@ -1939,6 +2056,36 @@ c
         call xcsync(flush_lp)
       endif !thkdf4
 c
+!!Alex add read thkdf2
+      if     (thkdf2.ge.0.0) then
+        util4(:,:) = thkdf2
+      else
+        if     (mnproc.eq.1) then
+        write (lp,*) ' now opening thkdf2 field  ...'
+        endif !1st tile
+        call xcsync(flush_lp)
+c
+        lgth = len_trim(flnmfor)
+c
+        call zaiopf(flnmfor(1:lgth)//'thkdf2.a', 'old', 923)
+        if     (mnproc.eq.1) then  ! .b file from 1st tile only
+        open (unit=uoff+923,file=flnmfor(1:lgth)//'thkdf2.b',
+     &     status='old', action='read')
+        endif !1st tile
+        call rdmonth(util4, 923)
+        call xctilr( util4, 1,1,    1,   1, halo_ps)
+        if     (mnproc.eq.1) then  ! .b file from 1st tile only
+        close (unit=uoff+923)
+        endif !1st tile
+        call zaiocl(923)
+c
+        if     (mnproc.eq.1) then
+        write (lp,*) ' ...finished opening thkdf2 field '
+        endif !1st tile
+        call xcsync(flush_lp)
+      endif !thkdf2
+!!Alex add read thkdf2
+
       if     (cbar.ge.0.0) then
         cbarp(:,:) = cbar
       else
@@ -2071,10 +2218,14 @@ c
      &                          aspux(i,j)
             thkdf4u(i,j) = 0.5*(util1(i,j)+util1(i-1,j))*
      &                         (aspux(i,j)**3)*scuy(i,j)
+!!Alex add thkdf2u
+            thkdf2u(i,j) = 0.5*(util4(i,j)+util4(i-1,j))*
+     &                         (aspux(i,j))
           else
             veldf2u(i,j) = 0.0
             veldf4u(i,j) = 0.0
             thkdf4u(i,j) = 0.0
+            thkdf2u(i,j) = 0.0
           endif
           if     (iv(i,j).eq.1) then
             veldf2v(i,j) = 0.5*(util2(i,j)+util2(i,j-1))*
@@ -2083,19 +2234,26 @@ c
      &                          aspvy(i,j)
             thkdf4v(i,j) = 0.5*(util1(i,j)+util1(i,j-1))*
      &                         (aspvy(i,j)**3)*scvx(i,j)
+!!Alex add thkdf2v
+            thkdf2v(i,j) = 0.5*(util4(i,j)+util4(i,j-1))*
+     &                         (aspvy(i,j))
           else
             veldf2v(i,j) = 0.0
             veldf4v(i,j) = 0.0
             thkdf4v(i,j) = 0.0
+            thkdf2v(i,j) = 0.0
           endif
         enddo !i
       enddo !j
       call xctilr(veldf2u, 1,1, nbdy,nbdy, halo_us)
       call xctilr(veldf4u, 1,1, nbdy,nbdy, halo_us)
       call xctilr(thkdf4u, 1,1, nbdy,nbdy, halo_us)
+      call xctilr(thkdf2u, 1,1, nbdy,nbdy, halo_us)
       call xctilr(veldf2v, 1,1, nbdy,nbdy, halo_vs)
       call xctilr(veldf4v, 1,1, nbdy,nbdy, halo_vs)
       call xctilr(thkdf4v, 1,1, nbdy,nbdy, halo_vs)
+      call xctilr(thkdf2v, 1,1, nbdy,nbdy, halo_vs)
+!!Alex add thkdf2v & thkdf2u for xctilr
 c
       return
       end

@@ -17,6 +17,7 @@
 #if defined(STOKES)
       use mod_stokes     ! HYCOM Stokes drift
 #endif
+      use mod_nc  ! netcdf interface for debug purposes !!Alex
 c
       implicit none
 c
@@ -38,14 +39,23 @@ c
 c
       real,    allocatable, dimension(:,:,:),
      &         save, private ::
-     &   u_m,v_m,ke_m,temp_m,saln_m,th3d_m,dp_m
+     &   u_m,v_m,ke_m,temp_m,saln_m,th3d_m,dp_m,uflx_m,vflx_m
+!!Alex add uflx_m, vflx_m
 c
       real,    allocatable, dimension(:,:),
      &         save, private ::
      &   ubaro_m,vbaro_m,kebaro_m,
      &   montg_m,srfht_m,steric_m,dpbl_m,dpmixl_m,
-     &   surflx_m,salflx_m, covice_m,thkice_m,temice_m
+     &   surflx_m,salflx_m, covice_m,thkice_m,temice_m,
+     &   surtx_m,surty_m
+!!Alex output radiative, evap,latent,wind-stress
 
+!!Alex 
+      real,    allocatable, dimension(:,:,:),
+     &         save, private ::
+     &         workm1
+
+      
       contains
 
       subroutine mean_allocate
@@ -59,12 +69,15 @@ c
 c
       allocate(      u_m(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm) )
       allocate(      v_m(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm) )
+      allocate(   uflx_m(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm) ) !!Alex
+      allocate(   vflx_m(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm) ) !!Alex
       allocate(     ke_m(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm) )
       allocate(   temp_m(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm) )
       allocate(   saln_m(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm) )
       allocate(   th3d_m(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm) )
       allocate(     dp_m(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm) )
-      call mem_stat_add(     7*(idm+2*nbdy)*(jdm+2*nbdy)*kdm )
+      allocate(   workm1(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm) ) !!Alex
+      call mem_stat_add(     10*(idm+2*nbdy)*(jdm+2*nbdy)*kdm )
 c
       allocate(  ubaro_m(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) )
       allocate(  vbaro_m(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) )
@@ -79,7 +92,9 @@ c
       allocate( covice_m(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) )
       allocate( thkice_m(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) )
       allocate( temice_m(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) )
-      call mem_stat_add(     13*(idm+2*nbdy)*(jdm+2*nbdy) )
+      allocate(  surtx_m(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) ) !!Alex
+      allocate(  surty_m(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) ) !!Alex
+      call mem_stat_add(     15*(idm+2*nbdy)*(jdm+2*nbdy) )
 c
       return
       end subroutine mean_allocate
@@ -112,6 +127,8 @@ c
           temice_m(i,j) = 0.0
            ubaro_m(i,j) = 0.0
            vbaro_m(i,j) = 0.0
+           surtx_m(i,j) = 0.0 !!Alex
+           surty_m(i,j) = 0.0 !!Alex
         enddo !i
         do k= 1,kk
           do i=1,ii
@@ -122,6 +139,9 @@ c
               ke_m(i,j,k) = 0.0
                u_m(i,j,k) = 0.0
                v_m(i,j,k) = 0.0
+!!Alex
+            uflx_m(i,j,k) = 0.0
+            vflx_m(i,j,k) = 0.0
             do ktr= 1,ntracr
               tracer_m(i,j,k,ktr) = 0.0
             enddo !ktr
@@ -151,8 +171,10 @@ c --- halos only needed for kinetic energy
 c
       call xctilr(u(      1-nbdy,1-nbdy,1,n),1,kk, 1,1, halo_uv)
       call xctilr(ubavg(  1-nbdy,1-nbdy,  n),1, 1, 1,1, halo_uv)
+      call xctilr(uflx(   1-nbdy,1-nbdy,1  ),1,kk, 1,1, halo_uv)
       call xctilr(v(      1-nbdy,1-nbdy,1,n),1,kk, 1,1, halo_vv)
       call xctilr(vbavg(  1-nbdy,1-nbdy,  n),1, 1, 1,1, halo_vv)
+      call xctilr(vflx(   1-nbdy,1-nbdy,1  ),1,kk, 1,1, halo_vv)
 c
 !$OMP PARALLEL DO PRIVATE(j,i,k,ktr,q,ke)
       do j=1,jj
@@ -178,8 +200,15 @@ c
             surflx_m(i,j) = surflx_m(i,j) + s*surflx(i,j)
             salflx_m(i,j) = salflx_m(i,j) + s*salflx(i,j)
             covice_m(i,j) = covice_m(i,j) + s*covice(i,j)
-            thkice_m(i,j) = thkice_m(i,j) + s*thkice(i,j)
-            temice_m(i,j) = temice_m(i,j) + s*temice(i,j)
+!            thkice_m(i,j) = thkice_m(i,j) + s*thkice(i,j)
+!            temice_m(i,j) = temice_m(i,j) + s*temice(i,j)
+            thkice_m(i,j) = thkice_m(i,j) + s*flxice(i,j)
+            temice_m(i,j) = temice_m(i,j) + s*sflice(i,j)
+!!Alex
+            if (abs(surtx(i,j)).lt. 100.) then
+               surtx_m(i,j) =  surtx_m(i,j) + s*surtx(i,j) !!Alex
+               surty_m(i,j) =  surty_m(i,j) + s*surty(i,j) !!Alex
+            endif
           endif !ip
           if (SEA_U) then
 #if defined(STOKES)
@@ -235,6 +264,7 @@ c
 #else
               u_m(i,j,k) = u_m(i,j,k) + q*(u(i,j,k,n) + ubavg(i,j,n))
 #endif
+              uflx_m(i,j,k) = uflx_m(i,j,k) + uflx(i,j,k)*qonem  !convert to m3/s !!Alex
             endif !iu
             if (SEA_V) then
                        q = s*dpv(i,j,k,n)
@@ -244,6 +274,7 @@ c
 #else
               v_m(i,j,k) = v_m(i,j,k) + q*(v(i,j,k,n) + vbavg(i,j,n))
 #endif
+              vflx_m(i,j,k) = vflx_m(i,j,k) + vflx(i,j,k)*qonem  !convert to m3/s !!Alex
             endif !iv
           enddo !i
         enddo !k
@@ -304,6 +335,9 @@ c
             covice_m(i,j) = covice_m(i,j) * q
             thkice_m(i,j) = thkice_m(i,j) * q
             temice_m(i,j) = temice_m(i,j) * q
+
+             surtx_m(i,j) =  surtx_m(i,j) * q  !!Alex
+             surty_m(i,j) =  surty_m(i,j) * q  !!Alex
           endif !ip
           if (SEA_U) then
             ubaro_m(i,j) = ubaro_m(i,j) * q
@@ -344,6 +378,7 @@ c
               else 
                 u_m(i,j,k) = u_m(i,j,k-1)
               endif
+              uflx_m(i,j,k) = uflx_m(i,j,k) * q
             endif !iu
             if (SEA_V) then
               qdp = min(depthv(i,j), 0.5*(p(i,j,k+1)+p(i,j-1,k+1))) -
@@ -354,6 +389,7 @@ c
               else 
                 v_m(i,j,k) = v_m(i,j,k-1)
               endif
+              vflx_m(i,j,k) = vflx_m(i,j,k) * q
             endif !iv
           enddo !i
         enddo !k
@@ -382,6 +418,7 @@ c
       integer      itst1,jtst1
       real         ssha,sshn,sshs,sssc,sstc,ubpnt,upnt,vbpnt,vpnt
       real         coord,xmin,xmax
+      character*80 filenc,filenc_date !!Alex
 
 c
       ldot = index(flnmarcm,'.',back=.true.)
@@ -412,7 +449,62 @@ c --- indicate the archive date
 #endif
       nopa=13
       nop =13+uoff
-c
+
+      if (arcflg.eq.1) then  !!Alex
+       write(filenc_date,'(i4.4,a1,i3.3,a1,i2.2)')
+     &        iyear,'_',iday,'_',ihour
+      
+      !! output netcdf               
+      !! 2d 
+      !!  ssh
+      write(filenc,'(a,a,a)') 'srfhgm_',trim(filenc_date),'.nc'
+      call ncput_2d(srfht_m/g,'ssh',trim(filenc))
+      !!  surflx         
+      write(filenc,'(a,a,a)') 'surflm_',trim(filenc_date),'.nc'
+      call ncput_2d(surflx_m,'surflx',trim(filenc))
+      !!  salflx         
+      write(filenc,'(a,a,a)') 'salflm_',trim(filenc_date),'.nc'
+      call ncput_2d(salflx_m,'salflx',trim(filenc))
+      !!  ice heat flux         
+      write(filenc,'(a,a,a)') 'flxicm_',trim(filenc_date),'.nc'
+      call ncput_2d(thkice_m,'flxice',trim(filenc))
+      !!  salflx         
+      write(filenc,'(a,a,a)') 'sflicm_',trim(filenc_date),'.nc'
+      call ncput_2d(temice_m,'sflice',trim(filenc))
+       !!  surtx         
+      write(filenc,'(a,a,a)') 'surtxm_',trim(filenc_date),'.nc'
+      call ncput_2d(surtx_m,'surtx',trim(filenc))
+      !!  surty         
+      write(filenc,'(a,a,a)') 'surtym_',trim(filenc_date),'.nc'
+      call ncput_2d(surty_m,'surty',trim(filenc))
+
+      !! 3d 
+      !!  h
+      workm1=dp_m/onem
+      write(filenc,'(a,a,a)') 'thickm_',trim(filenc_date),'.nc'
+      call ncput_3d(workm1,'h',trim(filenc))
+      !!  temp
+      write(filenc,'(a,a,a)') 'ptempm_',trim(filenc_date),'.nc'
+      call ncput_3d(temp_m,'temp',trim(filenc))
+      !!  saln
+      write(filenc,'(a,a,a)') 'ssalnm_',trim(filenc_date),'.nc'
+      call ncput_3d(saln_m,'saln',trim(filenc))
+      !!  u
+      write(filenc,'(a,a,a)') 'um_',trim(filenc_date),'.nc'
+      call ncput_3d(u_m,'u',trim(filenc))
+      !!  v
+      write(filenc,'(a,a,a)') 'vm_',trim(filenc_date),'.nc'
+      call ncput_3d(v_m,'v',trim(filenc))
+      !!  uflx
+      write(filenc,'(a,a,a)') 'uflxm_',trim(filenc_date),'.nc'
+      call ncput_3d(uflx_m,'uflx',trim(filenc))
+      !!  vflx
+      write(filenc,'(a,a,a)') 'vflxm_',trim(filenc_date),'.nc'
+      call ncput_3d(vflx_m,'vflx',trim(filenc))
+
+      else ! .not. archv_netcdf
+
+c      
 c --- no .[ab] files for 1-D cases (<=6x6).
 c
       if     (max(itdm,jtdm).gt.6) then  !not 1-D output
@@ -565,6 +657,20 @@ c
       write (nop,117) 'v-vel.  ',nmean,time_ave,k,coord,xmin,xmax
       call flush(nop)
       endif !1st tile
+!!Alex add vflx in  archm 
+      call zaiowr(uflx_m(1-nbdy,1-nbdy,k),iu,.true.,
+     &            xmin,xmax, nopa, .false.)
+      if     (mnproc.eq.1) then
+      write (nop,117) 'uflx    ',nmean,time_ave,k,coord,xmin,xmax
+      call flush(nop)
+      endif !1st tile
+      call zaiowr(vflx_m(1-nbdy,1-nbdy,k),iv,.true.,
+     &            xmin,xmax, nopa, .false.)
+      if     (mnproc.eq.1) then
+      write (nop,117) 'vflx    ',nmean,time_ave,k,coord,xmin,xmax
+      call flush(nop)
+      endif !1st tile
+!!Alex
       call zaiowr(ke_m(1-nbdy,1-nbdy,k),ip,.true.,
      &            xmin,xmax, nopa, .false.)
       if     (mnproc.eq.1) then
@@ -743,6 +849,9 @@ c ---   which only includes the fields up to vbaro (or up to nsterc)
         close (unit=nop)
       endif !test point tile
 c
+     
+      endif ! .not. archv_netcdf !!Alex
+      
       call xcsync(no_flush)
       return
       end subroutine mean_archiv

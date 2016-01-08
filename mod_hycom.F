@@ -1425,6 +1425,30 @@ c
         drgten(:,:,:,:)=0.0
       endif
 c
+c --- spatially varying sss relaxation !!Alex
+c
+      if (sssflg.ne.0) then
+          if     (sssrmu.lt.0.) then
+              call forfunrs     ! spatially varying rmus
+          elseif (sssrmu.gt.0.) then
+              rmus(:,:)=1./(sssrmu*86400.)
+          else 
+              rmus(:,:)=0.
+          endif
+      endif 
+c
+c --- spatially varying sst relaxation !!Alex
+c
+      if (sstflg.ne.0) then
+          if     (sstrmu.lt.0.) then
+              call forfunrs     ! spatially varying rmut
+          elseif (sstrmu.gt.0.) then
+              rmut(:,:)=1./(sstrmu*86400.)
+          else 
+              rmut(:,:)=0.
+          endif
+      endif 
+c
 c --- "scalar" tidal SAL factor
 c
       if     (tidflg.eq.0) then
@@ -2441,7 +2465,7 @@ c
           call momtum_hs(n,m)
           time=dtime0
           call forday(dtime0,yrflag, iyear,jday,ihour)
-          call Archive_ESMF(iyear,jday,ihour)
+!!Alex          call Archive_ESMF(iyear,jday,ihour)
           time=dtime
         endif !initial ESMF Archive
       endif !get_import
@@ -3570,7 +3594,7 @@ c ---   fill the ESMF Export State.
 c
         call Export_ESMF
         call forday(dtime,yrflag, iyear,jday,ihour)
-        call Archive_ESMF(iyear,jday,ihour)
+!!Alex        call Archive_ESMF(iyear,jday,ihour)
       endif
 #endif
 c

@@ -133,9 +133,11 @@ c
       endif !1st tile
       call xcsync(flush_lp)
 c
+      
       i = (itdm+1)/2
       j = (jtdm+1)/2
       call xceget(cenlat, plat, i,j)
+
 c
       do j=1,jj
       do i=1,ii
@@ -228,18 +230,18 @@ c
               thstar(i,j,k1,1)=th3d(i,j,k1,1)+kappaf(temp(i,j,k1,1),
      &                                               saln(i,j,k1,1),
      &                                        thbase+th3d(i,j,k1,1),
-     &                             0.5*(p(i,j,k)+p(i,j,k+1)),
+     &                                  0.5*(p(i,j,k1)+p(i,j,k1+1)), !!Alex
      &                                               kapref)
             else !variable kapref
               thstar(i,j,k1,1)=th3d(i,j,k1,1)+kappaf(temp(i,j,k1,1),
      &                                               saln(i,j,k1,1),
      &                                        thbase+th3d(i,j,k1,1),
-     &                             0.5*(p(i,j,k)+p(i,j,k+1)),
+     &                                  0.5*(p(i,j,k1)+p(i,j,k1+1)), !!Alex
      &                                               2)
               thstar(i,j,k1,2)=th3d(i,j,k1,1)+kappaf(temp(i,j,k1,1),
      &                                               saln(i,j,k1,1),
      &                                        thbase+th3d(i,j,k1,1),
-     &                             0.5*(p(i,j,k)+p(i,j,k+1)),
+     &                                  0.5*(p(i,j,k1)+p(i,j,k1+1)), !!Alex
      &                                               kapi(i,j))
             endif
 c
@@ -263,18 +265,18 @@ c
               thstar(i,j,k1,1)=th3d(i,j,k1,1)+kappaf(temp(i,j,k1,1),
      &                                               saln(i,j,k1,1),
      &                                        thbase+th3d(i,j,k1,1),
-     &                                    0.5*(p(i,j,k)+p(i,j,k+1)),
+     &                                  0.5*(p(i,j,k1)+p(i,j,k1+1)), !!Alex
      &                                               kapref)
             else !variable kapref
               thstar(i,j,k1,1)=th3d(i,j,k1,1)+kappaf(temp(i,j,k1,1),
      &                                               saln(i,j,k1,1),
      &                                        thbase+th3d(i,j,k1,1),
-     &                             0.5*(p(i,j,k)+p(i,j,k+1)),
+     &                                  0.5*(p(i,j,k1)+p(i,j,k1+1)), !!Alex
      &                                               2)
               thstar(i,j,k1,2)=th3d(i,j,k1,1)+kappaf(temp(i,j,k1,1),
      &                                               saln(i,j,k1,1),
      &                                        thbase+th3d(i,j,k1,1),
-     &                             0.5*(p(i,j,k)+p(i,j,k+1)),
+     &                                  0.5*(p(i,j,k1)+p(i,j,k1+1)), !!Alex
      &                                               kapi(i,j))
             endif
           enddo
@@ -296,20 +298,21 @@ c
           thstar(i,j,k,1)=th3d(i,j,k,1)+kappaf(temp(i,j,k,1),
      &                                         saln(i,j,k,1),
      &                                  thbase+th3d(i,j,k,1),
-     &                             0.5*(p(i,j,k)+p(i,j,k+1)),
+     &                             0.5*(p(i,j,k)+p(i,j,k+1)), !!Alex
      &                                         kapref)
         else !variable kapref
           thstar(i,j,k,1)=th3d(i,j,k,1)+kappaf(temp(i,j,k,1),
      &                                         saln(i,j,k,1),
      &                                  thbase+th3d(i,j,k,1),
-     &                             0.5*(p(i,j,k)+p(i,j,k+1)),
+     &                             0.5*(p(i,j,k)+p(i,j,k+1)), !!Alex
      &                                         2)
           thstar(i,j,k,2)=th3d(i,j,k,1)+kappaf(temp(i,j,k,1),
      &                                         saln(i,j,k,1),
      &                                  thbase+th3d(i,j,k,1),
-     &                             0.5*(p(i,j,k)+p(i,j,k+1)),
+     &                             0.5*(p(i,j,k)+p(i,j,k+1)), !!Alex
      &                                         kapi(i,j))
-        endif
+
+      endif
       endif
 c
 cdiag if (mod(k,3).ne.1) go to 55
@@ -358,6 +361,9 @@ c
         enddo
       endif
 c
+      if(mnproc.eq.1) then
+          print*,'Alex : before montg'
+      endif
       do j=1,jj
       do i=1,ii
       if (SEA_P) then
