@@ -28,7 +28,7 @@ c
 #else
       real, save, dimension(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) ::
 #endif
-     &  stress,stresx,stresy,dpmx,thkbop,oneta,onetai
+     &  stress,stresx,stresy,dpmx,thkbop,oneta_mtm
 
       contains
 
@@ -64,6 +64,7 @@ c
      &        airt,vpmx,wndx,wndy,wind,cdw,pair,rair,
      &        sumdp,sumth,thksur
       integer i,j,k,kl,l,margin,mbdy,hlstep
+
 c     &,iffstep
 c	  data iffstep/0/
 c      save iffstep
@@ -82,16 +83,14 @@ c
      &          stresy(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &            dpmx(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &          thkbop(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
-     &           oneta(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
-     &          onetai(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) )
-        call mem_stat_add( 7*(idm+2*nbdy)*(jdm+2*nbdy) )
+     &       oneta_mtm(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy))
+        call mem_stat_add( 6*(idm+2*nbdy)*(jdm+2*nbdy) )
                 stress = r_init
                 stresx = r_init
                 stresy = r_init
                   dpmx = r_init
                 thkbop = r_init
-                 oneta = r_init
-                onetai = r_init
+             oneta_mtm = r_init
       endif
 #endif
 c
@@ -110,6 +109,7 @@ c --- dp has up to date halos from cnuity or mod_hycom
         call xctilr(v(      1-nbdy,1-nbdy,1,n),1,kl, 1,1, halo_vv)
         call xctilr(vbavg(  1-nbdy,1-nbdy,  n),1, 1, 1,1, halo_vv)
       endif
+
 c
 c --- tidal forcing
 c
@@ -195,8 +195,13 @@ c
             endif !sshflg
 c
 c ---       store (1+eta) (= p_total/p_prime) in -oneta-
-            oneta(i,j)=1.+pbavg(i,j,m)/p(i,j,kk+1)
-            onetai(i,j)=oneta(i,j)-pbavg(i,j,m)/pbot(i,j)
+!            oneta(i,j)=1.+pbavg(i,j,m)/p(i,j,kk+1)
+!            onetai(i,j)=oneta(i,j)-pbavg(i,j,m)/pbot(i,j)
+            if     (btrmas) then
+                oneta_mtm(i,j)= oneta(i,j,m) 
+            else
+                oneta_mtm(i,j)=1.0 !disable oneta_mtm
+            endif
 c
 c ---       m_prime in lowest layer:
             montg(i,j,kk,1)=psikk(i,j,1)+
@@ -210,10 +215,12 @@ c ---       m_prime in lowest layer:
 c
 c ---       m_prime in remaining layers:
             do k=kk-1,1,-1
-              montg(i,j,k,1)=montg(i,j,k+1,1)+p(i,j,k+1)*oneta(i,j)
+              montg(i,j,k,1)=montg(i,j,k+1,1)+p(i,j,k+1)
+     &            *oneta_mtm(i,j)
      &            *(thstar(i,j,k+1,1)-thstar(i,j,k,1))*thref**2
               if     (kapref.eq.-1) then
-                montg(i,j,k,2)=montg(i,j,k+1,2)+p(i,j,k+1)*oneta(i,j)
+                  montg(i,j,k,2)=montg(i,j,k+1,2)+p(i,j,k+1)
+     &              *oneta_mtm(i,j)
      &              *(thstar(i,j,k+1,2)-thstar(i,j,k,2))*thref**2
               endif !kapref.eq.-1
             enddo !k
@@ -1026,6 +1033,9 @@ c
      &     dmontg,dthstr,dragu,dragv,qdpu,qdpv,dpthin,
      &     dpun,uhm,uh0,uhp,dpvn,vhm,vh0,vhp,sum_m,sum_n
       integer i,ia,ib,j,ja,jb,k,ka,l,mbdy,ktop,kmid,kbot,margin
+
+      real wuv1, wuv2,oneta_u,oneta_v
+
 c
 *     real*8    wtime
 *     external  wtime
@@ -1051,14 +1061,14 @@ c
      &          stresy(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &            dpmx(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &          thkbop(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
-     &           oneta(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) )
+     &       oneta_mtm(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy))
         call mem_stat_add( 6*(idm+2*nbdy)*(jdm+2*nbdy) )
                 stress = r_init
                 stresx = r_init
                 stresy = r_init
                   dpmx = r_init
                 thkbop = r_init
-                 oneta = r_init
+             oneta_mtm = r_init
       endif !stress
       if     (.not.allocated(vis2u)) then
         allocate(
@@ -1179,6 +1189,16 @@ c --- dp and dpo have up to date halos from cnuity
       call xctilr(vbavg(1-nbdy,1-nbdy,1  ),1,   2, 6,6, halo_vv)
       call xctilr(uflx( 1-nbdy,1-nbdy,1  ),1,  kk, 6,6, halo_uv)
       call xctilr(vflx( 1-nbdy,1-nbdy,1  ),1,  kk, 6,6, halo_vv)
+
+
+#if defined KEY_RASSELINUV
+!!Alex definition of constant 
+      wuv2 = ra2fac
+      wuv1 = 1.-2.*ra2fac
+#endif
+
+
+      
 #if defined(STOKES)      
 cedric  -  From  Ody  code
       dz(:,:)=0.
@@ -2120,7 +2140,7 @@ c
       do j=1-margin,jj+margin
         do i=1-margin,ii+margin
           if (SEA_P) then
-            util3(i,j)=0.5*(p(i,j,k+1)+p(i,j,k))*oneta(i,j)
+            util3(i,j)=0.5*(p(i,j,k+1)+p(i,j,k))*oneta_mtm(i,j)
             defor1(i,j)=((utotn(i+1,j)*scuy(i+1,j)
      &                   -utotn(i,  j)*scuy(i,  j))
      &                  -(vtotn(i,j+1)*scvx(i,j+1)
@@ -2463,7 +2483,13 @@ c ---       drag term is FRAC * Cb * (|v| + c.bar) * onem/dp
 c ---        where FRAC is the fraction of the layer to apply stress too
 c
             pbop=depthu(i,j)-0.5*(thkbop(i,j)+thkbop(i-1,j)) !top of bot. b.l.
-            qdpu=1.0/max(dpu(i,j,k,m),onemm)
+c ---       use 1/dpu, not 1/dpu', for stress calculation
+            if     (btrmas) then
+              oneta_u=1.0+0.5*(pbavg(i,j,m)+pbavg(i-1,j,m))/depthu(i,j)
+            else
+              oneta_u=1.0
+            endif
+            qdpu=1.0/max(dpu(i,j,k,m)*oneta_u,onemm)
             dragu=0.5*(drag(i,j)+drag(i-1,j))*qdpu*
      &                ( max(pbop,    pbotl)
      &                 -max(pbop,min(ptopl,pbotl-onemm)))
@@ -2544,7 +2570,22 @@ c     Ajout de la contribution du terme metrique - dzdx dvdz Vs
 !            print *,'dvdz',dvdzu(i,j,k),Vtopced(i,j,k),Vbotced(i,j,k)
 !            print *,-delt1*(dvdzu(i,j,k)*dzponddxu(i,j,k)*0.5*(vst3(i,j,k)+vst3(i-1,j,k)))
 #endif
-            u(i,j,k,n) = utotn(i,j) +
+#if defined KEY_RASSELINUV
+!!Alex Stored for Robert-Asselin filter
+            uo(i,j,k,n) = u(i,j,k,n)
+            uo(i,j,k,m) = u(i,j,k,m)
+            dpuo(i,j,k,m) = dpu(i,j,k,m)
+            dpuo(i,j,k,n) = dpu(i,j,k,n)
+c ---       time smoothing of -u- field  (part 1)
+!!Alex RB added to calculate u as in old version
+            u(i,j,k,m)=u(i,j,k,m)*(wuv1*dpu(i,j,k,m)+onemm)
+     &                +u(i,j,k,n)* wuv2*dpu(i,j,k,n)
+#endif
+#if defined KEY_RASSELINUV
+             u(i,j,k,n) = u(i,j,k,n) + ! old version
+#else
+             u(i,j,k,n) = utotn(i,j) + ! new version
+#endif
      &        delt1*(-scuxi(i,j)*(gradx(i,j)
      &                            +0.25*(utotm(i+1,j  )**2-
      &                                   utotm(i-1,j  )**2+
@@ -2569,6 +2610,8 @@ c     Ajout de la contribution du terme metrique - dzdx dvdz Vs
      &                 uflux3(i,j)-uflux2(i  ,j) )*qdpu/scu2(i,j) )
 c
 c
+!!Alex if not KEY RASSELINUV
+#if !defined KEY_RASSELINUV
 c ---       Robert-Asselin time filter of -u- field
 c ---       Note that this is smoothing dp * utot,
 c ---        but the filter is not conservative over 3 time levels.
@@ -2582,6 +2625,7 @@ c ---        but the filter is not conservative over 3 time levels.
             u(i,j,k,m) = uh0 + q
             u(i,j,k,n) = uhp
 
+#endif
           endif !iu
         enddo !i
       enddo !j
@@ -2866,7 +2910,13 @@ c ---       bottom drag term is FRAC * Cb * (|v| + c.bar) * onem/dp
 c ---        where FRAC is the fraction of the layer to apply drag too
 c
             pbop=depthv(i,j)-0.5*(thkbop(i,j)+thkbop(i,j-1))  !top of bot. b.l.
-            qdpv=1.0/max(dpv(i,j,k,m),onemm)
+c ---       use 1/dpv, not 1/dpv', for stress calculation
+            if     (btrmas) then
+              oneta_v=1.0+0.5*(pbavg(i,j,m)+pbavg(i,j-1,m))/depthv(i,j)
+            else
+              oneta_v=1.0
+            endif
+            qdpv=1.0/max(dpv(i,j,k,m)*oneta_v,onemm)
             dragv=0.5*(drag(i,j)+drag(i,j-1))*qdpv*
      &                ( max(pbop,    pbotl)
      &                 -max(pbop,min(ptopl,pbotl-onemm)))
@@ -2944,8 +2994,23 @@ c     Ajout de la contribution du terme metrique - dzdx dvdz Vs
 !            print *,-delt1*(dvdzu(i,j,k)*dzponddxu(i,j,k)*0.5*(vst3(i,j,k)+vst3(i-1,j,k)))
 #endif
 c
+#if defined KEY_RASSELINUV
+!!Alex stored for Robert-Asselin filter 
+            vo(i,j,k,n) = v(i,j,k,n)
+            vo(i,j,k,m) = v(i,j,k,m)
+            dpvo(i,j,k,m) = dpv(i,j,k,m)
+            dpvo(i,j,k,n) = dpv(i,j,k,n)
+c ---       time smoothing of -u- field  (part 1)
+!!Alex RB added to calculate v as old version
+            v(i,j,k,m)=v(i,j,k,m)*(wuv1*dpv(i,j,k,m)+onemm)
+     &                +v(i,j,k,n)* wuv2*dpv(i,j,k,n)
+#endif
 cdiag       util4(i,j) = v(i,j,k,n)
-            v(i,j,k,n) = vtotn(i,j) +
+#if defined KEY_RASSELINUV
+            v(i,j,k,n) = v(i,j,k,n) + ! old version
+#else
+            v(i,j,k,n) = vtotn(i,j) + ! new version
+#endif
      &        delt1*(-scvyi(i,j)*(grady(i,j)
      &                            +0.25*(vtotm(i,  j+1)**2-
      &                                   vtotm(i,  j-1)**2+
@@ -2969,6 +3034,8 @@ cdiag       util4(i,j) = v(i,j,k,n)
      &               -(vflux1(i,j)-vflux1(i,j-1)+
      &                 vflux3(i,j)-vflux2(i,j  ) )*qdpv/scv2(i,j) )
 c
+!!Alex if not KEY_RASSELINUV
+#if !defined KEY_RASSELINUV
 c ---       Robert-Asselin time filter of -v- field
 c ---       Note that this is smoothing dp * vtot,
 c ---        but the filter is not conservative over 3 time levels.
@@ -2981,6 +3048,7 @@ c ---        but the filter is not conservative over 3 time levels.
             q    = 0.5*ra2fac*(vhm + vhp - 2.0*vh0)
             v(i,j,k,m) = vh0 + q
             v(i,j,k,n) = vhp
+#endif 
           endif !iv
         enddo !i
       enddo !j
@@ -3060,6 +3128,161 @@ c
 c
 *         wtime2(20,k) = wtime()
  9    continue  ! k=1,kk
+
+      
+cRB
+#if defined KEY_RASSELINUV
+!!Alex old version : Asselin sur u,v
+      margin = 1
+!$OMP PARALLEL DO PRIVATE(j,k,l,i)
+!$OMP&         SCHEDULE(STATIC,jblk)
+      do 14 j=1-margin,jj+margin
+      do 14 k=1,kk
+c
+      do 12 l=1,isp(j)
+      do 12 i=max(1-margin,ifp(j,l)),min(ii+margin,ilp(j,l))
+      p(i,j,k+1)=p(i,j,k)+dp(i,j,k,n)
+ 12   continue
+c
+c --- compute new -dpu,dpv- field. save old -dpu,dpv- values in -pu,pv-.
+c
+      do 13 l=1,isu(j)
+      do 13 i=max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
+      pu(i,j,k+1)=dpu(i,j,k,n)
+ 13   continue
+c
+      do 14 l=1,isv(j)
+      do 14 i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
+      pv(i,j,k+1)=dpv(i,j,k,n)
+ 14   continue
+!$OMP END PARALLEL DO
+c
+      call dpudpv(dpu(1-nbdy,1-nbdy,1,n),
+     &            dpv(1-nbdy,1-nbdy,1,n),
+     &            p,depthu,depthv, margin, max(0,margin-1))
+c 
+      margin = 0
+c
+c --- substitute depth-weighted averages for (u,v) at massless grid points.
+c --- (scan layers in top-down direction to save time.)
+c --- extract barotropic velocities generated during most recent baroclinic
+c --- time step and use them to force barotropic flow field.
+c
+!$OMP PARALLEL DO PRIVATE(j,l,i,k,ka,q)
+!$OMP&         SCHEDULE(STATIC,jblk)
+      do 30 j=1-margin,jj+margin
+c
+      do 31 l=1,isu(j)
+c
+c NF Reorganisation of the calculation - strict equivalence
+c
+      do 32 i=max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
+         utotn(i,j)=u(i,j,1,n)*dpu(i,j,1,n) ! 0.
+ 32   continue
+      do 33 k=2,kk
+      do 33 i=max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
+            q=min(dpu(i,j,k,m),dpu(i,j,k,n),cutoff)/cutoff
+            u(i,j,k,n)=u(i,j,k,n)*q+u(i,j,k-1,n)*(1.-q)
+         utotn(i,j)=utotn(i,j)+u(i,j,k,n)*dpu(i,j,k,n)
+ 33   continue
+      do 31 i=max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
+         utotn(i,j)=utotn(i,j)/depthu(i,j)
+ 31   continue
+c
+      do 34 l=1,isv(j)
+c NF same as loop 32/33
+      do 35 i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
+         vtotn(i,j)=v(i,j,1,n)*dpv(i,j,1,n) ! 0.
+ 35   continue
+      do 36 k=2,kk !  k= 1,kk
+      ! ka= max(1,k-1)
+      do 36 i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
+            q=min(dpv(i,j,k,m),dpv(i,j,k,n),cutoff)/cutoff
+            v(i,j,k,n)= v(i,j,k,n)*q+v(i,j,k-1,n)*(1.-q)
+         vtotn(i,j)=vtotn(i,j)+v(i,j,k,n)*dpv(i,j,k,n)
+ 36   continue
+      do 34 i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
+         vtotn(i,j)=vtotn(i,j)/depthv(i,j)
+ 34   continue
+c
+ 30   continue
+!$OMP END PARALLEL DO
+c
+c --- time smoothing of -u,v- fields  (part 2)
+c
+!$OMP PARALLEL DO PRIVATE(j,k,l,i)
+!$OMP&         SCHEDULE(STATIC,jblk)
+      do 22 j=1-margin,jj+margin
+      do 22 k=1,kk
+c
+      do 23 l=1,isu(j)
+      do 23 i=max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
+         u(i,j,k,n)=u(i,j,k,n)-utotn(i,j)
+
+      u(i,j,k,m)=(u(i,j,k,m)+u(i,j,k,n)*wuv2*dpu(i,j,k,n))/
+     &   (wuv1*dpu(i,j,k,m)+onemm+wuv2*(pu(i,j,k+1)+dpu(i,j,k,n)))
+ 23   continue
+c
+      do 24 l=1,isv(j)
+      do 24 i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
+         v(i,j,k,n)=v(i,j,k,n)-vtotn(i,j)
+      v(i,j,k,m)=(v(i,j,k,m)+v(i,j,k,n)*wuv2*dpv(i,j,k,n))/
+     &   (wuv1*dpv(i,j,k,m)+onemm+wuv2*(pv(i,j,k+1)+dpv(i,j,k,n)))
+ 24   continue
+c
+ 22   continue
+!$OMP END PARALLEL DO
+c
+      if (btrlfr) then
+!$OMP PARALLEL DO PRIVATE(j,l,i)
+!$OMP&         SCHEDULE(STATIC,jblk)
+         do 868 j=1-margin,jj+margin
+c
+         do 861 l=1,isu(j)
+         do 861 i=max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
+            utotn(i,j)=utotn(i,j)*dt1inv
+            ubavg(i,j,3)=ubavg(i,j,n)
+ 861     continue
+c
+         do 862 l=1,isv(j)
+         do 862 i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
+            vtotn(i,j)=vtotn(i,j)*dt1inv
+            vbavg(i,j,3)=vbavg(i,j,n)
+ 862     continue
+c
+         do 863 l=1,isp(j)
+         do 863 i=max(1-margin,ifp(j,l)),min(ii+margin,ilp(j,l))
+            pbavg(i,j,3)=pbavg(i,j,n)
+ 863     continue
+c
+ 868     continue
+!$OMP END PARALLEL DO
+                 else
+!$OMP PARALLEL DO PRIVATE(j,l,i)
+!$OMP&         SCHEDULE(STATIC,jblk)
+         do 867 j=1-margin,jj+margin
+c
+         do 864 l=1,isu(j)
+         do 864 i=max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
+            utotn(i,j)=utotn(i,j)*dt1inv
+            ubavg(i,j,n)=ubavg(i,j,m)
+ 864     continue
+c
+         do 865 l=1,isv(j)
+         do 865 i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
+            vtotn(i,j)=vtotn(i,j)*dt1inv
+            vbavg(i,j,n)=vbavg(i,j,m)
+ 865     continue
+c
+         do 866 l=1,isp(j)
+         do 866 i=max(1-margin,ifp(j,l)),min(ii+margin,ilp(j,l))
+            pbavg(i,j,n)=pbavg(i,j,m)
+ 866     continue
+c
+ 867     continue
+!$OMP END PARALLEL DO
+      endif
+#else
 c
 c --- update dpu.m,dpv.m to time level t   with RA time smoother
 c --- update dpu.n,dpv.n to time level t+1
@@ -3160,6 +3383,7 @@ c
       enddo !j - do 30 loop
 !$OMP END PARALLEL DO
 c
+#endif
       if     (lpipe .and. lpipe_momtum) then
 c ---   compare two model runs.
         do k= 1,kk
@@ -3311,14 +3535,14 @@ c
      &          stresy(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &            dpmx(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &          thkbop(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
-     &           oneta(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) )
+     &       oneta_mtm(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) )
         call mem_stat_add( 6*(idm+2*nbdy)*(jdm+2*nbdy) )
                 stress = r_init
                 stresx = r_init
                 stresy = r_init
                   dpmx = r_init
                 thkbop = r_init
-                 oneta = r_init
+             oneta_mtm = r_init
       endif !stress
       if     (.not.allocated(scuyi)) then
         allocate(

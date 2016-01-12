@@ -241,6 +241,53 @@ c
       call restart_in3d(psikk,kapnum, ip, 'psikk   ')  !kapnum 1 or 2
       call restart_in3d(thkk, kapnum, ip, 'thkk    ')  !kapnum 1 or 2
       call restart_in3d(dpmixl,    2, ip, 'dpmixl  ')
+
+      if     (btrmas) then
+        do j= 1,jj
+          do i= 1,ii
+            if     (ip(i,j).eq.1) then
+              onetai(i,j)   = (thref+psikk(i,j,1)/pbot(i,j)) /
+     &                        (thref*(1.0-thref*(thkk(i,j,1)+thbase)))
+!!Alex test with onetai oneta restart and not inicon                
+              oneta( i,j,1) = onetai(i,j) + pbavg(i,j,1)/pbot(i,j)
+              oneta( i,j,2) = onetai(i,j) + pbavg(i,j,2)/pbot(i,j)
+              onetao(i,j,1) = onetai(i,j) + pbavg(i,j,1)/pbot(i,j)
+              onetao(i,j,2) = onetai(i,j) + pbavg(i,j,2)/pbot(i,j)
+          else
+              onetai(i,j)   = 0.0
+              oneta( i,j,1) = 0.0
+              oneta( i,j,2) = 0.0
+              onetao(i,j,1) = 0.0
+              onetao(i,j,2) = 0.0
+            endif
+          enddo !i
+        enddo !j
+      else
+c ---   only onetai is needed (for diagnostic calculations)
+        do j= 1,jj
+          do i= 1,ii
+            if     (ip(i,j).eq.1) then
+              onetai(i,j)   = (thref+psikk(i,j,1)/pbot(i,j)) /
+     &                        (thref*(1.0-thref*(thkk(i,j,1)+thbase)))
+!!Alex test with onetai oneta restart and not inicon                
+              oneta( i,j,1) = 1.0
+              oneta( i,j,2) = 1.0
+              onetao(i,j,1) = 1.0
+              onetao(i,j,2) = 1.0
+            else
+              onetai(i,j)   = 0.0
+              oneta( i,j,1) = 0.0
+              oneta( i,j,2) = 0.0
+              onetao(i,j,1) = 0.0
+              onetao(i,j,2) = 0.0
+            endif
+          enddo !i
+        enddo !j
+      endif !btrmas:else
+      call xctilr( onetai,1,1, nbdy,nbdy, halo_ps)
+      call xctilr( oneta, 1,2, nbdy,nbdy, halo_ps)
+      call xctilr( onetao,1,2, nbdy,nbdy, halo_ps)
+
       if (icegln) then
         call zagetc(cline,ios, uoff+11)
         if     (ios.ne.0) then

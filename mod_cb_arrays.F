@@ -89,6 +89,16 @@ c
      & pbavg          ! barotropic pressure
 
 #if defined(RELO)
+      real, save, allocatable, dimension(:,:,:) ::
+#else
+      real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,2) ::
+#endif
+     & oneta,         ! 1+eta
+     & onetao,        ! 1+eta, old for Robert-Asselin filter
+     & onetacon       ! oneta or 1.0
+
+      
+#if defined(RELO)
       real, save, allocatable, dimension(:,:) ::
 #else
       real, save, dimension(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) ::
@@ -100,7 +110,9 @@ c
      & uflux, vflux,  ! horizontal mass fluxes
      & uflux1,vflux1, ! more mass fluxes
      & uflux2,vflux2, ! more mass fluxes
-     & uflux3,vflux3  ! more mass fluxes
+     & uflux3,vflux3, ! more mass fluxes
+     & onetai,        ! 1+eta(t=0)
+     & onetacnt       ! 1+eta(t+1) after cnuity
 c
 #if defined(RELO)
       real, save, allocatable, dimension(:,:) ::
@@ -248,6 +260,13 @@ c
       integer, save, dimension(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,2) ::
 #endif
      & nmlb           ! layer containing mlb.
+
+#if defined(RELO)
+      real, save, allocatable, dimension(:,:) ::
+#else
+      real, dimension (2*nsteps_batrop+1,2) ::
+#endif
+     &    coeflx                ! used to diagnose the barotropic mass flux
 c
 c ---  s w i t c h e s    (if set to .true., then...)
 c --- btrlfr      leapfrog barotropic time step
@@ -788,6 +807,33 @@ c --- netcdf output
       real*8,save,dimension(itdm,jtdm) ::
 #endif
      &  worknc1
+
+c --- Robert-Asselin filter
+#if defined(RELO)
+      real,save,allocatable, dimension(:,:,:,:) ::
+#else
+      real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm,2) ::
+#endif
+     & uo,vo,         ! velocity components
+     & dpuo,dpvo,     ! layer thickness
+     & tempo,         ! temperature
+     & th3do,         ! density
+     & salno          ! salinity
+      
+#if defined(RELO)
+      real,save,allocatable, dimension(:,:,:,:) ::
+#else
+      real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,0:kkmy25+1,2) ::
+#endif
+     &    q2o,q2lo    ! q2,q2l
+c
+#if defined(RELO)
+      real,save,allocatable, dimension(:,:,:,:,:) ::
+#else
+      real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm,2,mxtrcr) ::
+#endif
+     & tracero        ! inert tracer
+
       
       contains
 
@@ -917,6 +963,18 @@ c
                ubavg = r_init
                vbavg = r_init
                pbavg = r_init
+
+#if defined(RELO)
+      allocate(
+     &         oneta(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,2),
+     &        onetao(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,2),
+     &      onetacon(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,2) )
+      call mem_stat_add( 3*(idm+2*nbdy)*(jdm+2*nbdy)*2 )
+#endif
+               oneta = 0.0 
+              onetao = 0.0
+            onetacon = 0.0
+c
 c
 #if defined(RELO)
       allocate(
@@ -935,8 +993,10 @@ c
      &        uflux2(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &        vflux2(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &        uflux3(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
-     &        vflux3(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) )
-      call mem_stat_add( 16*(idm+2*nbdy)*(jdm+2*nbdy) )
+     &        vflux3(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &        onetai(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &      onetacnt(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) )
+      call mem_stat_add( 18*(idm+2*nbdy)*(jdm+2*nbdy) )
 #endif
               defor1 = r_init
               defor2 = r_init
@@ -954,6 +1014,8 @@ c
               vflux2 = r_init
               uflux3 = r_init
               vflux3 = r_init
+              onetai = 0.0
+            onetacnt = 0.0
 c
 #if defined(RELO)
       allocate(
@@ -1224,6 +1286,13 @@ c
       call mem_stat_add( (idm+2*nbdy)*(jdm+2*nbdy) ) !real=2*int
 #endif
               nmlb = -99
+
+#if defined(RELO)
+      allocate(
+     &        coeflx(2*nsteps_batrop+1,2) )
+      call mem_stat_add( 2* 2*nsteps_batrop+1) !real=2*int
+#endif
+              coeflx = 0.0
 c
 #if defined(RELO)
       allocate(
@@ -1438,6 +1507,46 @@ c
         worknc2  = r_init
         work1    = r_init
       endif ! arcflg
+
+c --- Robert-Asselin filter
+#if defined(RELO)
+      allocate(
+     &              uo(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm,2),
+     &              vo(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm,2),
+     &            dpuo(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm,2),
+     &            dpvo(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm,2),
+     &           tempo(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm,2),
+     &           salno(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm,2),
+     &           th3do(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm,2))
+      call mem_stat_add( 7*(idm+2*nbdy)*(jdm+2*nbdy)*kdm*2 )
+#endif
+                    uo = 0.0
+                    vo = 0.0
+                  dpuo = 0.0
+                  dpvo = 0.0
+                 tempo = 0.0
+                 salno = 0.0
+                 th3do = 0.0
+c
+      if     (ntracr.gt.0) then
+#if defined(RELO)
+        allocate(
+     &        tracero(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm,2,ntracr) )
+        call mem_stat_add( (idm+2*nbdy)*(jdm+2*nbdy)*kdm*2*ntracr )
+#endif
+              tracero = r_init
+      endif
+      if (mxlmy) then
+#if defined(RELO)
+        kkmy25 = kk
+        allocate(
+     &               q2o(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,0:kkmy25+1,2),
+     &              q2lo(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,0:kkmy25+1,2) )
+        call mem_stat_add( 2*(idm+2*nbdy)*(jdm+2*nbdy)*(kkmy25+2)*2 )
+#endif
+                    q2o  = r_init
+                    q2lo = r_init
+      endif 
       
       end subroutine cb_allocate
 

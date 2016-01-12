@@ -912,16 +912,24 @@ c
       endif
       qhybrlx = 1.0/hybrlx
 c
-      if (btrmas) then
+      if (btrmas .and. .not.btrlfr) then
         if (mnproc.eq.1) then
         write(lp,'(/ a /)')
-     &    'error - btrmas (.true.) not yet implemented'
+     &    'error - btrmas==.true. requires btrlfr==.true.'
         call flush(lp)
         endif !1st tile
         call xcstop('(blkdat)')
                stop '(blkdat)'
       endif
-      isopcm = hybiso.gt.0.0  !use PCM for isopycnal layers?
+
+      if (btrlfr) then
+#if defined(RELO)
+         nsteps_batrop = 128
+         nsteps_baclin = 1440
+#endif
+      endif
+
+      isopcm = hybiso.gt.0.0    !use PCM for isopycnal layers?
       if (hybmap.lt.0 .or. hybmap.gt.3) then
         if (mnproc.eq.1) then
         write(lp,'(/ a,a /)') 
@@ -987,6 +995,25 @@ c
         endif !1st tile
         call xcstop('(blkdat)')
                stop '(blkdat)'
+      endif
+      if (btrmas) then
+        if (advtyp.eq.2) then
+          advtyp=3  !mass conserving FTC2
+          write(lp,'(/ a,a /)') 'advtyp mass conserving FCT2C'
+#if defined(RELO)
+          nsteps_batrop = 128
+          nsteps_baclin = 1440
+#endif
+        else
+          if (mnproc.eq.1) then
+          write(lp,'(/ a,a /)') 
+     &     'error - advtyp must be 2',
+     &     ' (FCT2) when btrmas==.true.'
+          call flush(lp)
+          endif !1st tile
+          call xcstop('(blkdat)')
+                 stop '(blkdat)'
+        endif
       endif
       if (momtyp.ne.2 .and. momtyp.ne.4) then
         if (mnproc.eq.1) then
@@ -2509,3 +2536,4 @@ c> May  2014 - removed lbflag=6
 c> Sep  2014 - langmr can now be 0 to 4
 c> Oct  2014 - added flxlfg=6, sea level pressure is input even if .not. mslprf
 c> May  2015 - added yrflag==4 to set forcw0
+c> Jan  2016 - added btrmas 

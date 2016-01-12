@@ -1388,6 +1388,16 @@ c
      &                         vbavg(1-nbdy,1-nbdy,n),iv,txt2)
         txt1='pbavg(n)    '
         call pipe_compare_sym1(pbavg(1-nbdy,1-nbdy,n),ip,txt1)
+        if     (btrmas) then
+          txt1='oneta(n)    '
+          call pipe_compare_sym1(oneta( 1-nbdy,1-nbdy,n),ip,txt1)
+          txt1='oneta(m)    '
+          call pipe_compare_sym1(oneta( 1-nbdy,1-nbdy,m),ip,txt1)
+          txt1='onetao(n)   '
+          call pipe_compare_sym1(onetao(1-nbdy,1-nbdy,n),ip,txt1)
+          txt1='onetao(m)   '
+          call pipe_compare_sym1(onetao(1-nbdy,1-nbdy,m),ip,txt1)
+        endif !btrmas
         txt1='montg(1)    '
         call pipe_compare_sym1(montg1(1-nbdy,1-nbdy),ip,txt1)
         if     (cinfo(1:6).eq.'icloan' .or.

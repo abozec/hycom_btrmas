@@ -14,6 +14,7 @@
       module mod_tsadvc
       use mod_xc    ! HYCOM communication interface
       use mod_pipe  ! HYCOM debugging interface
+      use mod_nc    ! HYCOM netcdf output (debug)
       implicit none
 c
 c --- module for tsadvc and related routines
@@ -25,7 +26,7 @@ c
      &  mbdy_advtyp = (/ 2,    !PCM
      &                   5,    !MPDATA
      &                   5,    !FCT2
-     &                   0,    !N/A
+     &                   5,    !FCT2C 
      &                   5 /)  !FCT4
 c
       logical, parameter :: lpipe_advem=.false.  !extra checking (when pipe on)
@@ -45,6 +46,22 @@ c
      &  ,flxdiv       ! flux divergence
      &  ,tx1,ty1      ! MPDATA terms
      &  ,fldao,fldan  ! total field quantity (old/center, new)
+
+      
+#if defined(RELO)
+      real, save, allocatable, dimension(:,:) ::
+#else
+      real,    save, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy)::
+#endif
+     &    uloc,vloc,hloc,dtloc,ucumdt,vcumdt,flxcum,flycum
+      
+#if defined(RELO)
+      logical, save, allocatable, dimension(:,:) ::
+#else
+      logical, save, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy)::
+#endif
+     &    lcalc
+
 
       contains
 
@@ -124,7 +141,28 @@ c
                  ty1 = r_init
                fldao = r_init
                fldan = r_init
-      endif !.not.allocated
+
+       allocate(
+     &           uloc(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &           vloc(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &           hloc(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &           dtloc(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &         ucumdt(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &         vcumdt(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &         flxcum(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &         flycum(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &          lcalc(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy))
+        call mem_stat_add( 9*(idm+2*nbdy)*(jdm+2*nbdy) )
+                 uloc = r_init
+                 vloc = r_init
+                 hloc = r_init
+                dtloc = r_init
+               ucumdt = r_init
+               vcumdt = r_init
+               flxcum = r_init
+               flycum = r_init
+               lcalc = .false.
+           endif                !.not.allocated
 #endif
 c
       if     (advtyp.eq.0) then
@@ -133,6 +171,8 @@ c
         call advem_mpdata(fld,     u,v,fco,fcn,posdef,scal,scali,dt2)
       elseif (advtyp.eq.2) then
         call advem_fct2(  fld,fldc,u,v,fco,fcn,       scal,scali,dt2)
+      elseif (advtyp.eq.3) then  !btrmas
+        call advem_fct2c( fld,fldc,u,v,fco,fcn,       scal,scali,dt2)
       elseif (advtyp.eq.4) then
         call advem_fct4(  fld,fldc,u,v,fco,fcn,       scal,scali,dt2)
       else
@@ -948,6 +988,412 @@ c ---   compare two model runs.
       return
       end subroutine advem_fct2
 
+      subroutine advem_fct2c(fld,fldc,u,v,fco,fcn, scal,scali,dt2)
+      implicit none
+c
+      real,    intent(in)    :: dt2
+      real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &         intent(inout) :: fld
+      real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &         intent(in)    :: fldc,u,v,scal,scali,fco,fcn
+c
+c Leapfrog 2nd order FCT
+c S.T. Zalesak (1979): Fully multidimensional flux-corrected
+c transport algorithms for fluids, J.Comput.Phys. 31 335-362.
+c
+c time steps are "old", "center" and "new".
+c
+c  fld   - scalar field, need not be >0, old input but new output
+c  fldc  - scalar field at center time step
+c  u,v   - mass fluxes satisfying continuity equation (old to new)
+c  fco   - thickness of the layer at old    time step
+c  fcn   - thickness of the layer at new    time step
+c  scal  - spatial increments (squared)
+c  scali - inverse of scal
+c  dt2   - temporal increment (from old to new)
+c
+c  on return, fld's valid halo will be 0 wide.
+c
+c  Remy Baraille, SHOM, September 2008.
+c
+      real,    parameter :: epsil=1.e-10
+c
+      real    flxdn,flxdp,flydn,flydp,q
+      integer i,j,l,ia,ib,ja,jb,mbdy_a
+      integer iter,margin
+c
+!      real,    save, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy)::
+!     &  uloc,vloc,hloc,dtloc,ucumdt,vcumdt,flxcum,flycum
+!      logical, save, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy)::
+!     &  lcalc
+c
+      integer       itest,jtest,ittest,jttest
+      common/testpt/itest,jtest,ittest,jttest
+      save  /testpt/
+c
+      real :: fhx, fhy, fqmax, fqmin, famax, famin
+      real :: qdt2, qp, qm, fact
+
+      mbdy_a = mbdy_advtyp(3)  ! = 5
+c
+c --- compute low-order and part of antidiffusive fluxes
+c
+c --- rhs: u, v, fld+
+c --- lhs: flx, fly, fmx, fmn
+c
+      margin = mbdy_a - 1
+c
+       lcalc(:,:) = .true.
+      flxcum(:,:) = 0.0
+      flycum(:,:) = 0.0
+       dtloc(:,:) = 0.0
+        hloc(:,:) = fco(:,:)
+       fldlo(:,:) = fld(:,:)
+c
+c --- explicitly set to zero so that arrays are zero over land
+      ucumdt(:,:) = 0.0
+      vcumdt(:,:) = 0.0
+        uloc(:,:) = 0.0
+        vloc(:,:) = 0.0
+         flx(:,:) = 0.0
+         fly(:,:) = 0.0
+c
+*     margin = mbdy_a - 1
+*     do i = 1-margin, ii+margin
+*     do l = 1, jsp(i)
+*        j = jfp(i,l)
+*        if (j.ge. 1-margin) then
+*           fly(i,j)    = 0.
+*           vloc(i,j)   = 0.
+*           vcumdt(i,j) = 0.
+*        endif
+*        j = jlp(i,l)+1
+*        if (j.le.jj+nbdy) then
+*           fly(i,j)    = 0.0
+*           vloc(i,j)   = 0.0
+*           vcumdt(i,j) = 0.
+*        endif
+*     enddo !l
+*     enddo !i
+*
+*     do j = 1-margin, jj+margin
+*     do l = 1,isp(j)
+*        i = ifp(j,l)
+*        if (i.ge. 1-margin) then
+*           flx(i,j)    = 0.0
+*           uloc(i,j)   = 0.
+*           ucumdt(i,j) = 0.
+*        endif
+*        i = ilp(j,l)+1
+*        if (i.le.ii+nbdy) then
+*           flx(i,j)=0.0
+*           uloc(i,j)   = 0.
+*           ucumdt(i,j) = 0.
+*         endif
+*     enddo !l
+*     enddo !j
+*
+      do iter = 1, 5
+c
+         margin = mbdy_a
+c
+         call xctilr( hloc(1-nbdy,1-nbdy),1,1,mbdy_a ,mbdy_a, halo_ps)
+         call xctilr(fldlo(1-nbdy,1-nbdy),1,1,mbdy_a ,mbdy_a, halo_ps)
+
+!$OMP PARALLEL DO PRIVATE(j,l,i,q)
+!$OMP&         SCHEDULE(STATIC,jblk)
+         do j = 1-margin, jj+margin
+         do l = 1, isp(j)
+         do i = max(1-margin,ifp(j,l)),min(ii+margin,ilp(j,l))
+            if (lcalc(i,j)) then
+               q = max(u(i+1,j),0.)-min(u(i,j),0.)
+     &           + max(v(i,j+1),0.)-min(v(i,j),0.)
+               if (q.gt.0.) then
+                  dtloc(i,j) = min( dt2, hloc(i,j) / (q*scali(i,j)))
+               else
+                  dtloc(i,j) = dt2
+               endif
+            endif
+         enddo !i
+         enddo !l
+         enddo !j
+c
+         margin = mbdy_a - 1
+c
+!$OMP PARALLEL DO PRIVATE(j,l,i)
+!$OMP&         SCHEDULE(STATIC,jblk)
+         do j = 1-margin, jj+margin
+         do l = 1, isu(j)
+         do i = max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
+            if (ucumdt(i,j).ne.dt2) then
+               if (u(i,j).ge.0) then
+                  uloc(i,j) = min(dt2-ucumdt(i,j),dtloc(i-1,j))*u(i,j)
+                  flx(i,j)  = fldlo(i-1,j)*uloc(i,j)
+                  ucumdt(i,j) = ucumdt(i,j) + 
+     &                          min(dt2-ucumdt(i,j),dtloc(i-1,j))
+               else
+                  uloc(i,j) = min(dt2-ucumdt(i,j),dtloc(i,j))*u(i,j)
+                  flx(i,j)  = fldlo(i,j)*uloc(i,j)
+                  ucumdt(i,j) = ucumdt(i,j) + 
+     &                          min(dt2-ucumdt(i,j),dtloc(i,j))
+               endif
+               flxcum(i,j) = flxcum(i,j) + flx(i,j)
+            else
+               uloc(i,j) = 0.
+               flx(i,j)  = 0.
+            endif
+         enddo !i
+         enddo !l
+         enddo !j
+!$OMP END PARALLEL DO
+c
+!$OMP PARALLEL DO PRIVATE(j,l,i)
+!$OMP&         SCHEDULE(STATIC,jblk)
+         do j = 1-margin, jj+margin
+         do l = 1, isv(j)
+         do i = max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
+            if (vcumdt(i,j).ne.dt2) then
+               if (v(i,j).ge.0) then
+                  vloc(i,j) = min(dt2-vcumdt(i,j),dtloc(i,j-1))*v(i,j)
+                  fly(i,j)  = fldlo(i,j-1)*vloc(i,j)
+                  vcumdt(i,j) = vcumdt(i,j) + 
+     &                          min(dt2-vcumdt(i,j),dtloc(i,j-1))
+               else
+                  vloc(i,j) = min(dt2-vcumdt(i,j),dtloc(i,j))*v(i,j)
+                  fly(i,j)  = fldlo(i,j)*vloc(i,j)
+                  vcumdt(i,j) = vcumdt(i,j) + 
+     &                          min(dt2-vcumdt(i,j),dtloc(i,j))
+               endif
+               flycum(i,j) = flycum(i,j) + fly(i,j)
+            else
+               vloc(i,j) = 0.
+               fly(i,j)  = 0.
+            endif
+         enddo !i
+         enddo !l
+         enddo !j
+!$OMP END PARALLEL DO
+c
+         margin = mbdy_a - 2
+
+!$OMP PARALLEL DO PRIVATE(j,l,i,q)
+!$OMP&         SCHEDULE(STATIC,jblk)
+         do j = 1-margin, jj+margin
+         do l = 1, isp(j)
+         do i = max(1-margin,ifp(j,l)),min(ii+margin,ilp(j,l))
+            if (lcalc(i,j)) then
+               qp = hloc(i,j) - (uloc(i+1,j)-uloc(i,j)+
+     &                     vloc(i,j+1)-vloc(i,j))*scali(i,j)
+c
+c                                it may happen that the cfl is violated,
+c                                                leading to a negative h
+c                                                -----------------------
+               if (qp.gt.0.) then
+                  fldlo(i,j) = ((epsil+hloc(i,j))*fldlo(i,j) - 
+     &                      (flx(i+1,j)-flx(i,j)+
+     &                      fly(i,j+1)-fly(i,j))*scali(i,j))/(epsil+qp)
+               endif
+               hloc(i,j)  = qp
+               lcalc(i,j) = ucumdt(i+1,j).ne.dt2.or.
+     &                      ucumdt(i,j)  .ne.dt2.or.
+     &                      vcumdt(i,j+1).ne.dt2.or.
+     &                      vcumdt(i,j)  .ne.dt2
+            endif
+         enddo !i
+         enddo !l
+         enddo !j
+!$OMP END PARALLEL DO
+c
+        if     (lpipe .and. lpipe_advem) then
+c ---     compare two model runs.
+          call pipe_compare_sym1(fldlo,  ip,'aditer:fldlo')
+          call pipe_compare_sym1(hloc,   ip,'aditer:hloc ')
+          call pipe_compare_sym1(flxcum, iu,'aditer:xcum ')
+          call pipe_compare_sym1(flycum, iv,'aditer:ycum ')
+        endif
+c
+      enddo !iter
+c
+      call xctilr( hloc(1-nbdy,1-nbdy),1,1,mbdy_a ,mbdy_a, halo_ps)
+      call xctilr(fldlo(1-nbdy,1-nbdy),1,1,mbdy_a ,mbdy_a, halo_ps)
+c
+!.....Leapfrog step using high order scheme
+c
+c --- rhs: u, v, fld+, flx, fly
+c --- lhs: fax, fay
+c
+      margin = mbdy_a - 2
+c
+!$OMP PARALLEL DO PRIVATE(j,l,i,q,jb,ja,ib,ia,fhx,fhy)
+!$OMP&         SCHEDULE(STATIC,jblk)
+      do j=1-margin,jj+margin
+        do l=1,isu(j)
+          do i=max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
+            fhx=u(i,j)*0.5*(fldc(i,j)+fldc(i-1,j))  ! 2nd order in space
+            fax(i,j)= fhx-flxcum(i,j)/dt2           ! anti-diffusion x-flux
+          enddo !i
+        enddo !l
+        do l=1,isv(j)
+          do i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
+            fhy=v(i,j)*0.5*(fldc(i,j)+fldc(i,j-1))  ! 2nd order in space
+            fay(i,j)= fhy-flycum(i,j)/dt2           ! anti-diffusion y-flux
+          enddo !i
+        enddo !l
+      enddo !j
+!$OMP END PARALLEL DO
+c              
+      if     (lpipe .and. lpipe_advem) then
+c ---   compare two model runs.           
+        call pipe_compare_sym2(fax, iu,'ad:xcum:fax ',
+     &                         fay, iv,'ad:ycum:fay ')
+      endif                                   
+c
+      do j=1-margin,jj+margin
+        do l=1,isp(j)
+          if     (ifp(j,l).ge. 1-margin) then
+            fax(ifp(j,l)  ,j)=0.0
+          endif
+          if     (ilp(j,l).lt.ii+margin) then
+            fax(ilp(j,l)+1,j)=0.0
+          endif
+        enddo !l
+      enddo !j
+c
+      do i=1-margin,ii+margin
+        do l=1,jsp(i)
+          if     (jfp(i,l).ge. 1-margin) then
+            fay(i,jfp(i,l)  )=0.0
+          endif
+          if     (jlp(i,l).lt.jj+margin) then
+            fay(i,jlp(i,l)+1)=0.0
+          endif
+        enddo !l
+      enddo !i
+c              
+      if     (lpipe .and. lpipe_advem) then
+c ---   compare two model runs.           
+        call pipe_compare_sym2(fax, iu,'ad:ip:0:fax ',
+     &                         fay, iv,'ad:ip:0:fay ')
+      endif                                   
+!========================================================
+c
+c --- finish computation of antidiffusive fluxes
+c
+c --- rhs: fax+,fay+,fldlo,fcn,scal
+c --- lhs: rp, rm
+c
+      margin = mbdy_a - 3
+c
+      qdt2 = 1.0/dt2
+!$OMP PARALLEL DO PRIVATE(j,l,i,ia,ib,ja,jb,
+!$OMP&                    fqmax,fqmin,famax,famin,qp,qm)
+!$OMP&         SCHEDULE(STATIC,jblk)
+      do j=1-margin,jj+margin
+        do l=1,isp(j)
+          do i=max(1-margin,ifp(j,l)),min(ii+margin,ilp(j,l))
+            ia=i-1; if (ip(ia,j).eq.0) ia=i
+            ib=i+1; if (ip(ib,j).eq.0) ib=i
+            ja=j-1; if (ip(i,ja).eq.0) ja=j
+            jb=j+1; if (ip(i,jb).eq.0) jb=j
+            fqmax = max(fldlo(i,j),fldlo(ia,j),fldlo(ib,j),
+     &                             fldlo(i,ja),fldlo(i,jb))
+            fqmin = min(fldlo(i,j),fldlo(ia,j),fldlo(ib,j),
+     &                             fldlo(i,ja),fldlo(i,jb))
+c Bug correction RB
+ccc            famax = max(0.0,fax(i, j) ) - min(0.0,fax(ib,j) ) +
+ccc     &              max(0.0,fay(i, j) ) - min(0.0,fay(i, jb))
+ccc            famin = max(0.0,fax(ib,j) ) - min(0.0,fax(i, j) ) +
+ccc     &              max(0.0,fay(i, jb)) - min(0.0,fay(i, j) )
+            famax = max(0.0,fax(i, j) ) - min(0.0,fax(i+1,j) ) +
+     &              max(0.0,fay(i, j) ) - min(0.0,fay(i, j+1))
+            famin = max(0.0,fax(i+1,j) ) - min(0.0,fax(i, j) ) +
+     &              max(0.0,fay(i, j+1)) - min(0.0,fay(i, j) )
+            if (famax > epsil) then
+              qp = (fqmax-fldlo(i,j)) *hloc(i,j)*scal(i,j)*qdt2
+              rp(i,j) = min(1.0, qp/famax)
+            else
+              rp(i,j) = 0.0
+            endif
+            if (famin > epsil) then
+              qm = (fldlo(i,j)-fqmin) *hloc(i,j)*scal(i,j)*qdt2
+              rm(i,j) = min(1.0, qm/famin)
+            else
+              rm(i,j) = 0.0
+            endif
+            fmx(i,j) = fqmax  !less restrictive maximum
+            fmn(i,j) = fqmin  !less restrictive minimum
+          enddo !i
+        enddo !l
+      enddo !j
+!$OMP END PARALLEL DO
+c
+c --- rhs: rp+, rm+
+c --- lhs: fax, fay
+c
+      margin = mbdy_a - 4
+c
+!$OMP PARALLEL DO PRIVATE(j,l,i,fact)
+!$OMP&         SCHEDULE(STATIC,jblk)
+      do j=1-margin,jj+margin
+        do l=1,isu(j)
+          do i=max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
+            if (fax(i,j) < 0.0) then
+              fact = min(rp(i-1,j),rm(i,j))
+            else
+              fact = min(rp(i,j),rm(i-1,j))
+            endif
+            fax(i,j) = fact*fax(i,j)
+          enddo !i
+        enddo !l
+        do l=1,isv(j)
+          do i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
+            if (fay(i,j) < 0.0) then
+              fact = min(rp(i,j-1),rm(i,j))
+            else
+              fact = min(rp(i,j),rm(i,j-1))
+            endif
+            fay(i,j) = fact*fay(i,j)
+          enddo !i
+        enddo !l
+      enddo !j
+!$OMP END PARALLEL DO
+c
+      if     (lpipe .and. lpipe_advem) then
+c ---   compare two model runs.
+        call pipe_compare_sym2(fax, iu,'ad:fact:fax ',
+     &                         fay, iv,'ad:fact:fay ')
+      endif
+c
+      margin = mbdy_a - 5
+c
+!$OMP PARALLEL DO PRIVATE(j,l,i)
+!$OMP&         SCHEDULE(STATIC,jblk)
+      do j=1-margin,jj+margin
+        do l=1,isp(j)
+          do i=max(1-margin,ifp(j,l)),min(ii+margin,ilp(j,l))
+!...........apply antidiffusive flux correction
+            flxdiv(i,j)=((fax(i+1,j)-fax(i,j))+
+     &                   (fay(i,j+1)-fay(i,j)) )*dt2*scali(i,j)
+            if (hloc(i,j).gt.0.) then
+               fld(i,j)=((epsil+hloc(i,j))*fldlo(i,j)-flxdiv(i,j))/
+     &                   (epsil+hloc(i,j))
+            else
+               fld(i,j)=fldlo(i,j)
+            endif
+          enddo !i
+        enddo !l
+      enddo !j
+!$OMP END PARALLEL DO
+c
+      if     (lpipe .and. lpipe_advem) then
+c ---   compare two model runs.
+        call pipe_compare_sym1(flxdiv, ip,'ad:t2c:flxdv')
+        call pipe_compare_sym1(fld,    ip,'ad:fct2c:fld')
+      endif
+c
+      return
+      end subroutine advem_fct2c
+
       subroutine advem_fct4(fld,fldc,u,v,fco,fcn,scal,scali,dt2)
       implicit none
 c
@@ -1309,7 +1755,8 @@ c
       logical, parameter :: lpipe_tsadvc=.false.  !extra checking (when pipe on)
 c
       real,    parameter :: onemu=9806.e-12 !pico-m, very small layer thickness
-      real,    parameter :: onezm=9806.e-20 !zepto-m, insignificant thickness
+!!Alex      real,    parameter :: onezm=9806.e-20 !zepto-m, insignificant thickness
+      real,    parameter :: onezm=9806.e-18 !zepto-m, insignificant thickness (bowl config)
 c
 #if defined(RELO)
       real, save, allocatable, dimension (:,:) ::
@@ -1326,7 +1773,7 @@ c
       logical latemp,lath3d,ldtemp,ldth3d
       integer i,isave,j,jsave,k,ktr,l,mbdy,mdf,margin
       real sminn,smaxx,flxdiv,th3d_t,
-     &     factor,q,dpsold,dpsmid,dpsnew,
+     &     factor,q,dpsold,dpsmid,dpsnew,dpmidn,
      &     dpold,dpmid,dpnew,qdpmidn,smin,ufa,ufb,vfa,vfb
       real xmin(kdm),xmax(kdm)
       real sminny(jdm),smaxxy(jdm)
@@ -1339,14 +1786,19 @@ c ---   2. so that the ratio of the standard deviation to the mean of
 c ---      each field is approximately the same:
 c ---        0 for -saln-,   256 for -temp-, 32 for -th3d-,
 c ---        0 for -tracer-,   1 for -q2-
-      real       pdzero,pdtemp,pdth3d,pdq2
-      parameter (pdzero=0.0, pdtemp=256.0, pdth3d=32.0, pdq2=1.0)
+      real       pdzero,pdtemp,pdth3d,pdq2,epshar
+      parameter (pdzero=0.0, pdtemp=256.0, pdth3d=32.0, pdq2=1.0,
+     &           epshar=1.0e-20)
 c
-      real harmon,a,b
+      real harmon,harmonc,a,b
       include 'stmt_fns.h'
 c
 c --- harmonic mean
       harmon(a,b)=2.*a*b/(a+b)
+c --- harmonic mean - Conservative for lateral friction
+      harmonc(a,b)=2.0*a*b/max((a+b),2.0*epshar)
+
+
 #if defined(RELO)
 c
       if     (.not.allocated(sold)) then
@@ -1400,6 +1852,13 @@ c --- dp halo is up to date
         call xctilr(q2l(1-nbdy,1-nbdy,0,1),1,2*kk+4, l,l, halo_ps)
       endif
 c
+      if     (btrmas) then
+        onetacon(:,:,n) = oneta(:,:,n)
+      else
+        onetacon(:,:,n) = 1.0  !disable onetacon
+      endif
+    
+
       do 81 k=1,kk
 c
 c --- ---------------------------------------------------
@@ -1474,17 +1933,34 @@ c
 c ---       save for time smoothing
             if     (latemp) then
               told(i,j)=temp(i,j,k,n)
+!!Alex RB added for  asselin.f
+              tempo(i,j,k,n) = temp(i,j,k,n)
+              tempo(i,j,k,m) = temp(i,j,k,m)
             elseif (lath3d) then
               told(i,j)=th3d(i,j,k,n)
+!!Alex RB added for asselin.f
+              th3do(i,j,k,n) = th3d(i,j,k,n)
+              th3do(i,j,k,m) = th3d(i,j,k,m)
             endif
             sold(i,j)=saln(i,j,k,n)
+!!Alex RB added for asselin.f
+            salno(i,j,k,n) = saln(i,j,k,n)
+            salno(i,j,k,m) = saln(i,j,k,m)
             do ktr= 1,ntracr
               trold(i,j,ktr)=tracer(i,j,k,n,ktr)
+!!Alex RB added for asselin.f
+              tracero(i,j,k,n,ktr)=tracer(i,j,k,n,ktr)
+              tracero(i,j,k,m,ktr)=tracer(i,j,k,m,ktr)
             enddo
             if (mxlmy) then
               q2old( i,j)=q2( i,j,k,n)
               q2lold(i,j)=q2l(i,j,k,n)
-            endif
+!!Alex RB added for asselin.f
+              q2o(i,j,k,n) = q2(i,j,k,n)
+              q2o(i,j,k,m) = q2(i,j,k,m)
+              q2lo(i,j,k,n) = q2l(i,j,k,n)
+              q2lo(i,j,k,m) = q2l(i,j,k,m)
+             endif
 c
 c --- before calling 'advem', make sure (a) mass fluxes are consistent
 c --- with layer thickness change, and (b) all fields are positive-definite
@@ -1495,8 +1971,8 @@ c --- with layer thickness change, and (b) all fields are positive-definite
               flxdiv=((uflx( i+1,j,k)-uflx( i,j,k))
      &               +(vflx( i,j+1,k)-vflx( i,j,k)))*delt1*scp2i(i,j)
             endif
-            util1(i,j)=max(dp(i,j,k,n)+flxdiv,0.0)  !old
-            util2(i,j)=max(dp(i,j,k,n),       0.0)  !new
+            util1(i,j)=max(onetacon(i,j,n)*dp(i,j,k,n)+flxdiv,0.0)  !old
+            util2(i,j)=max(onetacon(i,j,n)*dp(i,j,k,n),       0.0)  !new
           endif !ip
         enddo !i
       enddo !j
@@ -1616,6 +2092,7 @@ c ---   compare two model runs.
         call pipe_compare_sym1(th3d(1-nbdy,1-nbdy,k,n),ip,text)
       endif
 c
+!!Alex Robert-Asselin filter moved to mod_hycom.F
 c --- Robert-Asselin time filter of scalar fields
 c --- Note that this is smoothing dp * scalar,
 c ---  but the filter is not conservative across 3 time levels.
@@ -1624,99 +2101,203 @@ c --- rhs: temp.n, th3d.n, saln.n, dpo, dp.m, dp.n, sold, told
 c --- lhs: temp.n, th3d.n, dp.m, saln.m, temp.m, th3d.m
 c
       margin = 0  !after advem
-c
-!$OMP PARALLEL DO PRIVATE(j,i,ktr,dpsold,dpsmid,dpsnew,q,    !NOCSD
-!$OMP&                    dpold,dpmid,dpnew,qdpmidn,smin)    !NOCSD
-!$OMP&         SCHEDULE(STATIC,jblk) !NOCSD
-      do j=1-margin,jj+margin
-        sminny(j)= 999.  !simplifies OpenMP parallelization
-        smaxxy(j)=-999.  !simplifies OpenMP parallelization
-!DIR$   PREFERVECTOR
-        do i=1-margin,ii+margin
-          if (SEA_P) then
-            if     (dp(i,j,k,n).gt.onemm) then
-              sminny(j)=min(sminny(j),saln(i,j,k,n))
-              smaxxy(j)=max(smaxxy(j),saln(i,j,k,n))
-            endif
-c
-            if     (dp( i,j,k,m).gt.onezm) then !effectively non-zero
-            dpold   =     dpo(i,j,k,n)
-            dpmid   =     dpo(i,j,k,m)
-            dpnew   =     dp( i,j,k,n)
-            qdpmidn = 1.0/dp( i,j,k,m)
-c
-            dpsold = dpold*sold(i,j)
-            dpsmid = dpmid*saln(i,j,k,m)
-            dpsnew = dpnew*saln(i,j,k,n)
-            q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
-            saln(i,j,k,m)= (dpsmid + q) * qdpmidn
-            if     (latemp) then
-              dpsold = dpold*told(i,j)
-              dpsmid = dpmid*temp(i,j,k,m)
-              dpsnew = dpnew*temp(i,j,k,n)
-              q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
-              temp(i,j,k,m) = (dpsmid + q) * qdpmidn
-c ---         update dependent thermodynamic variable
-              th3d(i,j,k,m) = sig(temp(i,j,k,m),saln(i,j,k,m))-thbase
-            elseif (lath3d) then
-              dpsold = dpold*told(i,j)
-              dpsmid = dpmid*th3d(i,j,k,m)
-              dpsnew = dpnew*th3d(i,j,k,n)
-              q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
-              th3d(i,j,k,m) = (dpsmid + q) * qdpmidn
-c ---         update dependent thermodynamic variable
-              temp(i,j,k,m) = tofsig(th3d(i,j,k,m)+thbase,
-     &                               saln(i,j,k,m))
-            else   ! exactly isopycnal layer
-              th3d(i,j,k,m) = theta(i,j,k)
-c ---         update dependent thermodynamic variable
-              temp(i,j,k,m) = tofsig(th3d(i,j,k,m)+thbase,
-     &                               saln(i,j,k,m))
-            endif
-            do ktr= 1,ntracr
-c ---         non-negative version that exactly conserves constant tracers
-              smin   = min(    trold(i,j,    ktr),
-     &                        tracer(i,j,k,m,ktr),
-     &                        tracer(i,j,k,n,ktr) )
-              dpsold = dpold*( trold(i,j,    ktr) - smin)  !>=0
-              dpsmid = dpmid*(tracer(i,j,k,m,ktr) - smin)  !>=0
-              dpsnew = dpnew*(tracer(i,j,k,n,ktr) - smin)  !>=0
-              q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
-cdiag           if (i.eq.itest.and.j.eq.jtest.and.ktr.eq.1) then
-cdiag               write(lp,'(a,i3,1p3g15.6)')
-cdiag.                'RA dpo:',k,dpold*qonem,dpmid*qonem,dpnew*qonem
-cdiag               write(lp,'(a,i3,3f15.6)')
-cdiag.                'RA tro:',k, trold(i,j,    ktr),
-cdiag.                            tracer(i,j,k,m,ktr),
-cdiag.                            tracer(i,j,k,n,ktr)
-cdiag               write(lp,'(a,i3,1p2g15.6)')
-cdiag.                'RA dpm:',k,dpmid*qonem,
-cdiag.                            dp(i,j,k,m)*qonem
-cdiag               write(lp,'(a,i3,2f15.6)')
-cdiag.                'RA trm:',k,tracer(i,j,k,m,ktr),
-cdiag.                            smin + (dpsmid + q) * qdpmidn
-cdiag               call flush(lp)
-cdiag           endif !debug
-              tracer(i,j,k,m,ktr) = smin + (dpsmid + q) * qdpmidn
-            enddo !ktr
-            if (mxlmy) then
-              dpsold = dpold*q2old(i,j)
-              dpsmid = dpmid*   q2(i,j,k,m)
-              dpsnew = dpnew*   q2(i,j,k,n)
-              q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
-              q2(i,j,k,m) = (dpsmid + q) * qdpmidn
-              dpsold = dpold*q2lold(i,j)
-              dpsmid = dpmid*   q2l(i,j,k,m)
-              dpsnew = dpnew*   q2l(i,j,k,n)
-              q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
-              q2l(i,j,k,m) = (dpsmid + q) * qdpmidn
-            endif !mxlmy
-            endif !effectively non-zero 
-          endif !ip
-        enddo !i
-      enddo !j
-!$OMP END PARALLEL DO !NOCSD
-c
+!      if     ( btrmas ) then 
+!c
+!!$OMP PARALLEL DO PRIVATE(j,i,ktr,dpsold,dpsmid,dpsnew,q,    !NOCSD
+!!$OMP&                    dpold,dpmid,dpnew,qdpmidn,smin)    !NOCSD
+!!$OMP&         SCHEDULE(STATIC,jblk) !NOCSD
+!        do j=1-margin,jj+margin
+!        sminny(j)= 999.  !simplifies OpenMP parallelization
+!        smaxxy(j)=-999.  !simplifies OpenMP parallelization
+!!DIR$     PREFERVECTOR
+!          do i=1-margin,ii+margin
+!          if (SEA_P) then
+!            if     (dp(i,j,k,n).gt.onemm) then
+!              sminny(j)=min(sminny(j),saln(i,j,k,n))
+!              smaxxy(j)=max(smaxxy(j),saln(i,j,k,n))
+!            endif
+!c
+!            dpmidn = dp( i,j,k,m)*onetao(i,j,m)
+!            if     (dpmidn.gt.onezm) then !effectively non-zero
+!            dpold  = dpo(i,j,k,n)*onetao(i,j,n) !t-1
+!            dpmid  = dpo(i,j,k,m)*oneta( i,j,m) !t
+!            dpnew  = dp( i,j,k,n)*oneta( i,j,n) !t+1
+!c ---       redo the Robert-Asselin thickness filter
+!            q           = 0.5*ra2fac*(dpold+dpnew-2.0*dpmid)
+!            dpmidn      = dpmid + q
+!            dp(i,j,k,m) = dpmidn / onetao(i,j,m)
+!            qdpmidn     = 1.0/max(dpmidn,onemu)
+!c
+!            dpsold = dpold*sold(i,j)
+!            dpsmid = dpmid*saln(i,j,k,m)
+!            dpsnew = dpnew*saln(i,j,k,n)
+!            q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
+!            saln(i,j,k,m)= (dpsmid + q) * qdpmidn
+!            if     (latemp) then
+!              dpsold = dpold*told(i,j)
+!              dpsmid = dpmid*temp(i,j,k,m)
+!              dpsnew = dpnew*temp(i,j,k,n)
+!              q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
+!              temp(i,j,k,m) = (dpsmid + q) * qdpmidn
+!c ---         update dependent thermodynamic variable
+!              th3d(i,j,k,m) = sig(temp(i,j,k,m),saln(i,j,k,m))-thbase
+!            elseif (lath3d) then
+!              dpsold = dpold*told(i,j)
+!              dpsmid = dpmid*th3d(i,j,k,m)
+!              dpsnew = dpnew*th3d(i,j,k,n)
+!              q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
+!              th3d(i,j,k,m) = (dpsmid + q) * qdpmidn
+!c ---         update dependent thermodynamic variable
+!              temp(i,j,k,m) = tofsig(th3d(i,j,k,m)+thbase,
+!     &                               saln(i,j,k,m))
+!            else   ! exactly isopycnal layer
+!              th3d(i,j,k,m) = theta(i,j,k)
+!c ---         update dependent thermodynamic variable
+!              temp(i,j,k,m) = tofsig(th3d(i,j,k,m)+thbase,
+!     &                               saln(i,j,k,m))
+!            endif
+!            do ktr= 1,ntracr
+!c ---         non-negative version that exactly conserves constant tracers
+!              smin   = min(   tracero(i,j,k,n,ktr),
+!     &                        tracer (i,j,k,m,ktr),
+!     &                        tracer (i,j,k,n,ktr) )
+!              dpsold = dpold*(tracero(i,j,k,n,ktr) - smin)  !>=0
+!              dpsmid = dpmid*(tracero(i,j,k,m,ktr) - smin)  !>=0
+!              dpsnew = dpnew*(tracer (i,j,k,n,ktr) - smin)  !>=0
+!              q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
+!              tracer(i,j,k,m,ktr) = smin + (dpsmid + q) * qdpmidn
+!            enddo !ktr
+!            if (mxlmy) then
+!              dpsold = dpold*q2o(i,j,k,n)
+!              dpsmid = dpmid*q2o(i,j,k,m)
+!              dpsnew = dpnew* q2(i,j,k,n)
+!              q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
+!              q2(i,j,k,m) = (dpsmid + q) * qdpmidn
+!              dpsold = dpold*q2lo(i,j,k,n)
+!              dpsmid = dpmid*q2lo(i,j,k,m)
+!              dpsnew = dpnew* q2l(i,j,k,n)
+!              q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
+!              q2l(i,j,k,m) = (dpsmid + q) * qdpmidn
+!            endif !mxlmy
+!            endif !effectively non-zero
+!          endif !ip
+!        enddo !i
+!        enddo !j
+!!$OMP END PARALLEL DO !NOCSD
+!c --- Robert-Asselin on oneta
+!      do j=1-margin,jj+margin
+!        do i=1-margin,ii+margin
+!          if (SEA_P) then
+!            oneta(i,j,m) = onetao(i,j,m)
+!          endif 
+!        enddo
+!      enddo
+!      else !.not.btrmas
+!          
+!c
+!!$OMP PARALLEL DO PRIVATE(j,i,ktr,dpsold,dpsmid,dpsnew,q,    !NOCSD
+!!$OMP&                    dpold,dpmid,dpnew,qdpmidn,smin)    !NOCSD
+!!$OMP&         SCHEDULE(STATIC,jblk) !NOCSD
+!      do j=1-margin,jj+margin
+!        sminny(j)= 999.  !simplifies OpenMP parallelization
+!        smaxxy(j)=-999.  !simplifies OpenMP parallelization
+!!DIR$   PREFERVECTOR
+!        do i=1-margin,ii+margin
+!          if (SEA_P) then
+!            if     (dp(i,j,k,n).gt.onemm) then
+!              sminny(j)=min(sminny(j),saln(i,j,k,n))
+!              smaxxy(j)=max(smaxxy(j),saln(i,j,k,n))
+!            endif
+!c
+!            if     (dp( i,j,k,m).gt.onezm) then !effectively non-zero
+!            dpold   =     dpo(i,j,k,n)
+!            dpmid   =     dpo(i,j,k,m)
+!            dpnew   =     dp( i,j,k,n)
+!            qdpmidn = 1.0/dp( i,j,k,m)
+!c
+!            dpsold = dpold*sold(i,j)
+!            dpsmid = dpmid*saln(i,j,k,m)
+!            dpsnew = dpnew*saln(i,j,k,n)
+!            q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
+!            saln(i,j,k,m)= (dpsmid + q) * qdpmidn
+!            if     (latemp) then
+!              dpsold = dpold*told(i,j)
+!              dpsmid = dpmid*temp(i,j,k,m)
+!              dpsnew = dpnew*temp(i,j,k,n)
+!              q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
+!              temp(i,j,k,m) = (dpsmid + q) * qdpmidn
+!c ---         update dependent thermodynamic variable
+!              th3d(i,j,k,m) = sig(temp(i,j,k,m),saln(i,j,k,m))-thbase
+!            elseif (lath3d) then
+!              dpsold = dpold*told(i,j)
+!              dpsmid = dpmid*th3d(i,j,k,m)
+!              dpsnew = dpnew*th3d(i,j,k,n)
+!              q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
+!              th3d(i,j,k,m) = (dpsmid + q) * qdpmidn
+!c ---         update dependent thermodynamic variable
+!              temp(i,j,k,m) = tofsig(th3d(i,j,k,m)+thbase,
+!     &                               saln(i,j,k,m))
+!            else   ! exactly isopycnal layer
+!              th3d(i,j,k,m) = theta(i,j,k)
+!c ---         update dependent thermodynamic variable
+!              temp(i,j,k,m) = tofsig(th3d(i,j,k,m)+thbase,
+!     &                               saln(i,j,k,m))
+!            endif
+!            do ktr= 1,ntracr
+!c ---         non-negative version that exactly conserves constant tracers
+!              smin   = min(    trold(i,j,    ktr),
+!     &                        tracer(i,j,k,m,ktr),
+!     &                        tracer(i,j,k,n,ktr) )
+!              dpsold = dpold*( trold(i,j,    ktr) - smin)  !>=0
+!              dpsmid = dpmid*(tracer(i,j,k,m,ktr) - smin)  !>=0
+!              dpsnew = dpnew*(tracer(i,j,k,n,ktr) - smin)  !>=0
+!              q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
+!cdiag           if (i.eq.itest.and.j.eq.jtest.and.ktr.eq.1) then
+!cdiag               write(lp,'(a,i3,1p3g15.6)')
+!cdiag.                'RA dpo:',k,dpold*qonem,dpmid*qonem,dpnew*qonem
+!cdiag               write(lp,'(a,i3,3f15.6)')
+!cdiag.                'RA tro:',k, trold(i,j,    ktr),
+!cdiag.                            tracer(i,j,k,m,ktr),
+!cdiag.                            tracer(i,j,k,n,ktr)
+!cdiag               write(lp,'(a,i3,1p2g15.6)')
+!cdiag.                'RA dpm:',k,dpmid*qonem,
+!cdiag.                            dp(i,j,k,m)*qonem
+!cdiag               write(lp,'(a,i3,2f15.6)')
+!cdiag.                'RA trm:',k,tracer(i,j,k,m,ktr),
+!cdiag.                            smin + (dpsmid + q) * qdpmidn
+!cdiag               call flush(lp)
+!cdiag           endif !debug
+!              tracer(i,j,k,m,ktr) = smin + (dpsmid + q) * qdpmidn
+!            enddo !ktr
+!            if (mxlmy) then
+!              dpsold = dpold*q2old(i,j)
+!              dpsmid = dpmid*   q2(i,j,k,m)
+!              dpsnew = dpnew*   q2(i,j,k,n)
+!              q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
+!              q2(i,j,k,m) = (dpsmid + q) * qdpmidn
+!              dpsold = dpold*q2lold(i,j)
+!              dpsmid = dpmid*   q2l(i,j,k,m)
+!              dpsnew = dpnew*   q2l(i,j,k,n)
+!              q      = 0.5*ra2fac*(dpsold+dpsnew-2.0*dpsmid)
+!              q2l(i,j,k,m) = (dpsmid + q) * qdpmidn
+!            endif !mxlmy
+!            endif !effectively non-zero 
+!          endif !ip
+!        enddo !i
+!      enddo !j
+!!$OMP END PARALLEL DO !NOCSD
+!c
+!c --- Robert-Asselin on oneta
+!      margin = 0 
+!      do j=1-margin,jj+margin
+!        do i=1-margin,ii+margin
+!          if (SEA_P) then
+!            oneta(i,j,m) = onetao(i,j,m)
+!          endif 
+!        enddo
+!      enddo
+!      
+!      endif                     ! btrmas
       xmin(k) = minval(sminny(1:jj))
       xmax(k) = maxval(smaxxy(1:jj))
 c
@@ -1751,41 +2332,42 @@ c
 c
 c --- check for negative scalar fields.
 c
-      if     (mod(nstep,3).eq.0 .or. diagno) then
-        call xcminr(xmin(1:kk))
-        call xcmaxr(xmax(1:kk))
-c
-        do k= 1,kk
-          sminn=xmin(k)
-          smaxx=xmax(k)
-c
-          if (sminn.lt.0.0) then
-            do j=1,jj
-              do i=1,ii
-                if (SEA_P) then
-                  if (saln(i,j,k,n).eq.sminn) then
-                    write (lp,'(i9,a,2i5,i3,a,f10.2)') 
-     &                nstep,' i,j,k =',i+i0,j+j0,k,
-     &                ' neg. saln after advem call ',
-     &                saln(i,j,k,n)
-                  endif !sminn
-                endif !ip
-              enddo !i
-            enddo !j
-            call xcsync(flush_lp)
-          endif
-c
-          if (diagno) then
-            if     (mnproc.eq.1) then
-            write (lp,'(i9,i3, a,2f9.3, a,1pe9.2,a)')
-     &        nstep,k,
-     &        ' min/max of s after advection:',sminn,smaxx,
-     &        '   (range:',smaxx-sminn,')'
-            call flush(lp)
-            endif
-          endif
-        enddo !k
-      endif !every 3 time steps or diagno
+      !!Alex moved to asselin.f
+!      if     (mod(nstep,3).eq.0 .or. diagno) then
+!        call xcminr(xmin(1:kk))
+!        call xcmaxr(xmax(1:kk))
+!c
+!        do k= 1,kk
+!          sminn=xmin(k)
+!          smaxx=xmax(k)
+!c
+!          if (sminn.lt.0.0) then
+!            do j=1,jj
+!              do i=1,ii
+!                if (SEA_P) then
+!                  if (saln(i,j,k,n).eq.sminn) then
+!                    write (lp,'(i9,a,2i5,i3,a,f10.2)') 
+!     &                nstep,' i,j,k =',i+i0,j+j0,k,
+!     &                ' neg. saln after advem call ',
+!     &                saln(i,j,k,n)
+!                  endif !sminn
+!                endif !ip
+!              enddo !i
+!            enddo !j
+!            call xcsync(flush_lp)
+!          endif
+!c
+!          if (diagno) then
+!            if     (mnproc.eq.1) then
+!            write (lp,'(i9,i3, a,2f9.3, a,1pe9.2,a)')
+!     &        nstep,k,
+!     &        ' min/max of s after advection:',sminn,smaxx,
+!     &        '   (range:',smaxx-sminn,')'
+!            call flush(lp)
+!            endif
+!          endif
+!        enddo !k
+!      endif !every 3 time steps or diagno
 c
 c --- --------------------------------------
 c --- diffusion of thermodynamic variable(s)
@@ -1926,16 +2508,28 @@ c
         do j=1-margin,jj+margin
           do i=1-margin,ii+margin
             if (SEA_U) then
-              factor=temdf2*aspux(i,j)*
-     &               scuy(i,j)*harmon(max(dp(i-1,j,k,n),onemu)
-     &                               ,max(dp(i  ,j,k,n),onemu))
+              if     (btrmas) then
+                factor=temdf2*aspux(i,j)*
+     &                 scuy(i,j)*harmonc(dp(i-1,j,k,n)*oneta(i-1,j,n)
+     &                                  ,dp(i  ,j,k,n)*oneta(i,  j,n))
+              else !.not.btrmas
+                factor=temdf2*aspux(i,j)*
+     &                 scuy(i,j)*harmon(max(dp(i-1,j,k,n),onemu)
+     &                                 ,max(dp(i  ,j,k,n),onemu))
+              endif
               uflux (i,j)=factor*(fld1(i-1,j)-fld1(i,j))
               uflux2(i,j)=factor*(fld2(i-1,j)-fld2(i,j))
             endif !iu
             if (SEA_V) then
-              factor=temdf2*aspvy(i,j)*
-     &               scvx(i,j)*harmon(max(dp(i,j-1,k,n),onemu)
-     &                               ,max(dp(i,j  ,k,n),onemu))
+              if     (btrmas) then
+                factor=temdf2*aspvy(i,j)*
+     &                 scvx(i,j)*harmonc(dp(i,j-1,k,n)*oneta(i,j-1,n)
+     &                                  ,dp(i,j  ,k,n)*oneta(i,j,  n))
+              else !.not.btrmas
+                factor=temdf2*aspvy(i,j)*
+     &                 scvx(i,j)*harmon(max(dp(i,j-1,k,n),onemu)
+     &                                 ,max(dp(i,j  ,k,n),onemu))
+              endif
               vflux (i,j)=factor*(fld1(i,j-1)-fld1(i,j))
               vflux2(i,j)=factor*(fld2(i,j-1)-fld2(i,j))
             endif !iv
@@ -1965,7 +2559,12 @@ c
         do j=1-margin,jj+margin
           do i=1-margin,ii+margin
             if (SEA_P) then
-              factor=-delt1/(scp2(i,j)*max(dp(i,j,k,n),onemu))
+              if     (btrmas) then
+                factor=-delt1/(scp2(i,j)*max(dp(i,j,k,n)*oneta(i,j,n),
+     &                                       epshar))
+              else !.not.btrmas
+                factor=-delt1/(scp2(i,j)*max(dp(i,j,k,n),onemu))
+              endif !btrmas:else
               util1(i,j)=((uflux (i+1,j)-uflux (i,j))
      &                   +(vflux (i,j+1)-vflux (i,j)))*factor
               fld1(i,j)=fld1(i,j)+util1(i,j)
@@ -2014,15 +2613,27 @@ c
         do j=1-margin,jj+margin
           do i=1-margin,ii+margin
             if (SEA_U) then
-              factor=temdf2*aspux(i,j)*
-     &               scuy(i,j)*harmon(max(dp(i-1,j,k,n),onemu)
-     &                               ,max(dp(i  ,j,k,n),onemu))
+              if     (btrmas) then
+                factor=temdf2*aspux(i,j)*
+     &                 scuy(i,j)*harmonc(dp(i-1,j,k,n)*oneta(i-1,j,n)
+     &                                  ,dp(i  ,j,k,n)*oneta(i,  j,n))
+              else !.not.btrmas
+                factor=temdf2*aspux(i,j)*
+     &                 scuy(i,j)*harmon(max(dp(i-1,j,k,n),onemu)
+     &                                 ,max(dp(i  ,j,k,n),onemu))
+              endif !btrmas:else
               uflux (i,j)=factor*(fld1(i-1,j)-fld1(i,j))
             endif !iu
             if (SEA_V) then
-              factor=temdf2*aspvy(i,j)*
-     &               scvx(i,j)*harmon(max(dp(i,j-1,k,n),onemu)
-     &                               ,max(dp(i,j  ,k,n),onemu))
+              if     (btrmas) then
+                factor=temdf2*aspvy(i,j)*
+     &                 scvx(i,j)*harmonc(dp(i,j-1,k,n)*oneta(i,j-1,n)
+     &                                  ,dp(i,j  ,k,n)*oneta(i,j,  n))
+              else !.not.btrmas
+                factor=temdf2*aspvy(i,j)*
+     &                 scvx(i,j)*harmon(max(dp(i,j-1,k,n),onemu)
+     &                                 ,max(dp(i,j  ,k,n),onemu))
+              endif !btrmas:else
               vflux (i,j)=factor*(fld1(i,j-1)-fld1(i,j))
             endif !iv
           enddo !i
@@ -2047,7 +2658,12 @@ c
         do j=1-margin,jj+margin
           do i=1-margin,ii+margin
             if (SEA_P) then
-              factor=-delt1/(scp2(i,j)*max(dp(i,j,k,n),onemu))
+              if     (btrmas) then
+                factor=-delt1/(scp2(i,j)*max(dp(i,j,k,n)*oneta(i,j,n),
+     &                                       epshar))
+              else !.not.btrmas
+                factor=-delt1/(scp2(i,j)*max(dp(i,j,k,n),onemu))
+              endif !btrmas:else
               util1(i,j)=((uflux (i+1,j)-uflux (i,j))
      &                   +(vflux (i,j+1)-vflux (i,j)))*factor
               fld1(i,j)=fld1(i,j)+util1(i,j)

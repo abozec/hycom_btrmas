@@ -47,6 +47,8 @@ c
       real       dpfatal
       parameter (dpfatal=-10.0)   !fatal negative dp in meters
 c
+      real       epsil_cnuity
+      parameter (epsil_cnuity=1.e-14) 
       logical    lpipe_cnuity
       parameter (lpipe_cnuity=.false.)
 c
@@ -100,6 +102,10 @@ c
       call xctilr(v(      1-nbdy,1-nbdy,1,m),1,  kk, 6,6, halo_vv)
       call xctilr(ubavg(  1-nbdy,1-nbdy,  m),1,   1, 6,6, halo_uv)
       call xctilr(vbavg(  1-nbdy,1-nbdy,  m),1,   1, 6,6, halo_vv)
+
+cCL/RB MPI bug correction 2011-01 !!Alex
+      call xctilr(oneta(  1-nbdy,1-nbdy,  n),1, 1, 6,6, halo_ps)
+      call xctilr(oneta(  1-nbdy,1-nbdy,  m),1, 1, 6,6, halo_ps)
 c
 c --- rhs: dpmixl.n
 c --- lhs: util3, utotn, vtotn
@@ -121,6 +127,12 @@ c
       enddo !j
 !$OMP END PARALLEL DO
 c
+      if     (btrmas) then
+         onetacon(:,:,:) = oneta(:,:,:)
+      else
+         onetacon(:,:,:) = 1.0  !disable onetacon
+      endif
+
       do 76 k=1,kk
 c
 c --- uflux/vflux = low-order (diffusive) mass fluxes at old time level.
@@ -138,7 +150,8 @@ c
             i=ifu(j,l)-1
             if (i.ge.1-margin) then
               if (iuopn(i,j).ne.0) then
-                q=min(dp(i  ,j,k,n),max(0.,depthu(i+1,j)-util3(i  ,j)))
+                q=min(dp(i  ,j,k,n),max(0.0,depthu(i+1,j)-util3(i  ,j)))
+     &             * onetacon(i,j,n)    
 #if defined(STOKES)
 !             write(6,*)'cnuity.F line 106,i+1,j,k= ',i+1,j,k
                 utotm(i,j)=(u(i+1,j,k,m)+ubavg(i,j,m)+
@@ -152,7 +165,8 @@ c
             i=ilu(j,l)+1
             if (i.le.ii+margin) then
               if (iuopn(i,j).ne.0) then
-                q=min(dp(i-1,j,k,n),max(0.,depthu(i-1,j)-util3(i-1,j)))
+                q=min(dp(i-1,j,k,n),max(0.0,depthu(i-1,j)-util3(i-1,j)))
+     &             * onetacon(i-1,j,n)  
 #if defined(STOKES)
 !               write(6,*)'cnuity.F line 119,i-1,j,k= ',i-1,j,k
                 utotm(i,j)=(u(i-1,j,k,m)+ubavg(i,j,m)+
@@ -177,7 +191,8 @@ c
             j=jfv(i,l)-1
             if (j.ge.1-margin) then
               if (ivopn(i,j).ne.0) then
-                q=min(dp(i,j  ,k,n),max(0.,depthv(i,j+1)-util3(i,j  )))
+                q=min(dp(i,j  ,k,n),max(0.0,depthv(i,j+1)-util3(i,j  )))
+     &             * onetacon(i,j,n)
 #if defined(STOKES)
 !             write(6,*)'cnuity.F line 144,i,j+1,k= ',i,j+1,k
                 vtotm(i,j)=(v(i,j+1,k,m)+vbavg(i,j,m)+
@@ -191,7 +206,8 @@ c
             j=jlv(i,l)+1
             if (j.le.jj+margin) then
               if (ivopn(i,j).ne.0) then
-                q=min(dp(i,j-1,k,n),max(0.,depthv(i,j-1)-util3(i,j-1)))
+                q=min(dp(i,j-1,k,n),max(0.0,depthv(i,j-1)-util3(i,j-1)))
+     &             * onetacon(i,j-1,n)
 #if defined(STOKES)
 !             write(6,*)'cnuity.F line 144,i,j-1,k= ',i,j-1,k
                 vtotm(i,j)=(v(i,j-1,k,m)+vbavg(i,j,m)+vsd(i,j-1,k)
@@ -227,11 +243,16 @@ c
 #endif              
               if (utotm(i,j).ge.0.) then
                 q=min(dp(i-1,j,k,n),max(0.,depthu(i,j)-util3(i-1,j)))
+     &             * onetacon(i-1,j,n)
               else
                 q=min(dp(i  ,j,k,n),max(0.,depthu(i,j)-util3(i  ,j)))
+     &             * onetacon(i,j,n)
               endif
               uflux(i,j)=utotm(i,j)*q
-              uflux2(i,j)=utotm(i,j)*dpu(i,j,k,m)-uflux(i,j)
+              uflux2(i,j)=utotm(i,j)*dpu(i,j,k,m)
+     &                     * 0.5*(onetacon(i,  j,m)+
+     &                            onetacon(i-1,j,m) )
+     &                                           -uflux(i,j)
               uflx(i,j,k)=uflux(i,j)
             endif !iu
           enddo !i
@@ -247,11 +268,16 @@ c
 #endif              
               if (vtotm(i,j).ge.0.) then
                 q=min(dp(i,j-1,k,n),max(0.,depthv(i,j)-util3(i,j-1)))
+     &             * onetacon(i,j-1,n)
               else
                 q=min(dp(i,j  ,k,n),max(0.,depthv(i,j)-util3(i,j  )))
+     &             * onetacon(i,j,n)
               endif
               vflux(i,j)=vtotm(i,j)*q
-              vflux2(i,j)=vtotm(i,j)*dpv(i,j,k,m)-vflux(i,j)
+              vflux2(i,j)=vtotm(i,j)*dpv(i,j,k,m)
+     &                     * 0.5*(onetacon(i,j,  m)+
+     &                            onetacon(i,j-1,m) )
+     &                                           -vflux(i,j)
               vflx(i,j,k)=vflux(i,j)
             endif !iv
           enddo !i
@@ -273,7 +299,8 @@ c
           do i=1-margin,ii+margin
             if (SEA_P) then
               util3(i,j)=util3(i,j)+dp(i,j,k,n)
-              dp(i,j,k,n)=dp(i,j,k,n)-
+              dp(i,j,k,n)=dp(i,j,k,n)*
+     &                     onetacon(i,j,n)-
      &                    ((uflux(i+1,j)-uflux(i,j))+
      &                     (vflux(i,j+1)-vflux(i,j)))*delt1*scp2i(i,j)
               dpo(i,j,k,m)=dp(i,j,k,n)  ! save for loop 19 test
@@ -564,6 +591,8 @@ c
                  stop 'cnuity'
         endif !dpfatal
       endif !every 3 time steps
+
+      if     (.not.btrmas) then
 c
 c --- restore nondivergence of vertically integrated mass flow by
 c --- recovering fluxes lost in the flux limiting process.
@@ -668,6 +697,9 @@ c
  77   continue  ! k=1,kk
 c
       call pipe_comparall(m,n, 'cnui77, step')
+
+      endif !.not.btrmas
+
 c
 c --- check for negative thicknesses.
 c
@@ -690,6 +722,9 @@ c
           endif
         enddo !k
       endif !every 3 time steps
+
+      if  (.not.btrmas) then 
+
 c
 c --- add bottom-pressure restoring term arising from split-explicit treatment
 c --- of continuity equation (step 4 in appendix b to 1992 brhs paper)
@@ -724,6 +759,8 @@ c ---   compare two model runs.
           call pipe_compare_sym1(dp(1-nbdy,1-nbdy,k,n),ip,text)
         enddo
       endif
+
+      endif  !.not.btrmas
 c
 c --- ---------------------------------------------------------------------
 c --- biharmonic thickness diffusion (literally, interface depth diffusion)
@@ -1351,6 +1388,48 @@ c
         enddo !k
       enddo !j
 !$OMP END PARALLEL DO
+
+      if     (btrmas) then
+c
+c ---   add bottom-pressure restoring term arising from split-explicit treatment
+c ---   of continuity equation (step 4 in appendix b to 1992 brhs paper)
+c
+c ---   rhs: dp.n, p, pbot
+c ---   lhs: dp.n, p, dpmixl.n
+c
+        margin = 0
+!$OMP   PARALLEL DO PRIVATE(j,l,i)
+!$OMP&           SCHEDULE(STATIC,jblk)
+        do j=1-margin,jj+margin
+            do i=1-margin,ii+margin
+            if (SEA_P) then
+              onetacnt(i,j) = p(i,j,kk+1)/pbot(i,j)
+              k=1
+!                if (p(i,j,kk+1) .gt. 0.0) then
+                if (onetacnt(i,j) .gt. epsil_cnuity) then
+                  dp(i,j,k,n)=dp(i,j,k,n)/onetacnt(i,j)
+                else
+                  dp(i,j,1,n)=pbot(i,j)
+                endif
+                p(i,j,k+1)=p(i,j,k)+dp(i,j,k,n)
+                if (isopyc) then
+                  dpmixl(i,j,n)=dp(i,j,k,n)
+                endif
+              do k=2,kk
+!                if (p(i,j,kk+1) .gt. 0.0) then
+                if (onetacnt(i,j) .gt. epsil_cnuity) then
+                  dp(i,j,k,n)=dp(i,j,k,n)/onetacnt(i,j)
+                else
+                  dp(i,j,k,n)=0.0
+                endif
+                p(i,j,k+1)=p(i,j,k)+dp(i,j,k,n)
+              enddo !k
+          endif ! ip
+          enddo !i
+        enddo !j
+!$OMP   END PARALLEL DO
+      endif !btrmas
+      
 c
 c --- Robert-Asselin time filter of thickness field
 c

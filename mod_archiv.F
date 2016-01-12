@@ -1,3 +1,16 @@
+#if defined(ROW_LAND)
+#define SEA_P .true.
+#define SEA_U .true.
+#define SEA_V .true.
+#elif defined(ROW_ALLSEA)
+#define SEA_P allip(j).or.ip(i,j).ne.0
+#define SEA_U alliu(j).or.iu(i,j).ne.0
+#define SEA_V alliv(j).or.iv(i,j).ne.0
+#else
+#define SEA_P ip(i,j).ne.0
+#define SEA_U iu(i,j).ne.0
+#define SEA_V iv(i,j).ne.0
+#endif
       module mod_archiv
       use mod_xc         ! HYCOM communication interface
       use mod_cb_arrays  ! HYCOM saved arrays
@@ -99,7 +112,63 @@ c
       integer      i,j,k,ktr,ldot,nop,nopa
       real         coord,xmin,xmax
       character*80 filenc,filenc_date !!Alex for Netcdf output
+!!Alex add dpp  (h=dp*oneta)
+      real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm,2) :: dpp
+      real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm)   :: rho1
+      real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm+1) :: pp
+      real :: thstar1
+      integer margin
 c
+!!Alex 
+! --- Calculate thstar to convert dp_prime into h 
+! --- we UNSPLIT the dp'' to get dp
+      margin = 0
+      dpp(:,:,:,:)=dp(:,:,:,:)
+c
+!$OMP PARALLEL DO PRIVATE(j,l,k,i)
+!$OMP&         SCHEDULE(STATIC,jblk)
+      do j=1-margin,jj+margin
+        do i=1-margin,ii+margin
+          if (SEA_P) then
+              pp(i,j,1) = 0.0
+              do k=2,kk+1
+                pp(i,j,k)=pp(i,j,k-1)+dp(i,j,k-1,n)
+              enddo
+            do k=1,kk
+              if (kapref.ne.0) then  !thermobaric
+c
+c ---   sigma-star is virtual potential density, as defined in 
+c ---   Sun et.al. (1999), 'Inclusion of thermobaricity in 
+c ---   isopycnic-coordinate ocean models', JPO 29 pp 2719-2729.
+c
+c ---   use upper interface pressure in converting sigma to sigma-star.
+c ---   to avoid density variations in layers intersected by bottom
+c
+                if     (kapref.gt.0) then
+                  thstar1=th3d(i,j,k,n)+kappaf(temp(i,j,k,n),
+     &                                         saln(i,j,k,n),
+     &                                  th3d(i,j,k,n)+thbase,
+     &                             0.5*(pp(i,j,k)+pp(i,j,k+1)),
+     &                                               kapref)
+                else
+                  thstar1=th3d(i,j,k,n)+kappaf(temp(i,j,k,n),
+     &                                         saln(i,j,k,n),
+     &                                  th3d(i,j,k,n)+thbase,
+     &                             0.5*(pp(i,j,k)+pp(i,j,k+1)),
+     &                                                    2)
+                endif !kapref
+              else  !non-thermobaric
+                thstar1=th3d(i,j,k,n)
+              endif  !thermobaric:else
+              rho1(i,j,k) =1.e0/(thref-(thstar1+thbase)*thref**2)
+              dpp(i,j,k,n) = onem*dp(i,j,k,n)
+     &                           *oneta(i,j,n)/(g*rho1(i,j,k))
+            enddo 
+          endif ! ip
+        enddo !i
+      enddo !j
+!$OMP END PARALLEL DO
+
       if     (kkout.eq.1) then
         flnmarcvs = flnmarcs
       else
@@ -179,20 +248,29 @@ c ---   indicate the archive time step
           write(filenc,'(a,a,a)') 'vtsurf_',trim(filenc_date),'.nc'
           call ncput_2d(v(:,:,1,n)+vbavg(:,:,n),'vsurf',trim(filenc))
           
-!! ---   h
-!          work1=dp(:,:,:,n)/onem
-!          write(filenc,'(a,a,a)') 'thick_',trim(filenc_date),'.nc'
-!          call ncput_3d(work1,'h',trim(filenc))          
-!! ---   temp
-!          work1=temp(:,:,:,n)
-!          write(filenc,'(a,a,a)') 'pottem_',trim(filenc_date),'.nc'
-!          call ncput_3d(work1,'temp',trim(filenc))
-!          
-!! ---   saln
-!          work1=saln(:,:,:,n)
-!          write(filenc,'(a,a,a)') 'salnty_',trim(filenc_date),'.nc'
-!          call ncput_3d(work1,'saln',trim(filenc))
-!
+! ---   oneta
+          write(filenc,'(a,a,a)') 'oneta_',trim(filenc_date),'.nc'
+          call ncput_2d(oneta(:,:,n),'oneta',trim(filenc))
+
+! ---   h
+          work1=dpp(:,:,:,n)/onem
+          write(filenc,'(a,a,a)') 'h_',trim(filenc_date),'.nc'
+          call ncput_3d(work1,'h',trim(filenc))          
+
+! ---   dp
+          work1=dp(:,:,:,n)/onem
+          write(filenc,'(a,a,a)') 'thick_',trim(filenc_date),'.nc'
+          call ncput_3d(work1,'dp',trim(filenc))          
+! ---   temp
+          work1=temp(:,:,:,n)
+          write(filenc,'(a,a,a)') 'pottem_',trim(filenc_date),'.nc'
+          call ncput_3d(work1,'temp',trim(filenc))
+          
+! ---   saln
+          work1=saln(:,:,:,n)
+          write(filenc,'(a,a,a)') 'salnty_',trim(filenc_date),'.nc'
+          call ncput_3d(work1,'saln',trim(filenc))
+
 !! ---   utot
 !          do k=1,kdm 
 !            work1(:,:,k)=u(:,:,k,n)+ubavg(:,:,n)

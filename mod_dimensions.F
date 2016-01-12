@@ -41,6 +41,12 @@ c --- for CCSM array dimensions
 c
 c --- actual extent of this tile is (i0+1:i0+ii,j0+1:j0+jj,1:kk)
       integer, save :: i0,j0,ii,jj
+
+c --- nsteps_baclin = maximum baroclinic steps per day
+      integer,save :: nsteps_baclin
+c                         
+c --- nsteps_batrop = maximum barotropic steps per baroclinic time step
+      integer,save :: nsteps_batrop
 c
 c --- information (gindex) that keeps do loops from running into land
       integer, save, allocatable, dimension (:,:) ::

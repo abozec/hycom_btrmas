@@ -44,6 +44,15 @@ c
 c --- natm  = number of saved atmospheric fields
       integer    natm
       parameter (natm=2)      ! must be 2 (high freq.) or 4 (monthly)
+
+c --- nsteps_baclin = maximum baroclinic steps per day
+      integer    nsteps_baclin
+      parameter (nsteps_baclin =1440)  !one minute or longer time step
+c                         
+c --- nsteps_batrop = maximum barotropic steps per baroclinic time step
+      integer    nsteps_batrop
+      parameter (nsteps_batrop = 128)
+c
 c
 c ---   END OF REGION AND TILING SPECIFIC PARAMETERS
 c-----------------------------------------------------------------------------

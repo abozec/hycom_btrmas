@@ -361,9 +361,6 @@ c
         enddo
       endif
 c
-      if(mnproc.eq.1) then
-          print*,'Alex : before montg'
-      endif
       do j=1,jj
       do i=1,ii
       if (SEA_P) then
@@ -388,6 +385,30 @@ c
         thkk( i,j,kkap)=thstar(i,j,kk,kkap)
         psikk(i,j,kkap)=montg( i,j,kk,kkap)
       enddo !kkap
+
+      montg1(i,j) = montg(i,j,1,1)
+      srfhgt(i,j) = montg1(i,j)
+c
+      if     (btrmas) then
+          onetai(i,j)   = (thref+psikk(i,j,1)/pbot(i,j)) /
+     &                    (thref*(1.0-thref*(thkk(i,j,1)+thbase)))
+          oneta( i,j,1) = onetai(i,j)
+          oneta( i,j,2) = onetai(i,j)
+          onetao(i,j,1) = onetai(i,j)
+          onetao(i,j,2) = onetai(i,j)
+          tempo(i,j,:,:)=temp(i,j,:,:)
+          salno(i,j,:,:)=saln(i,j,:,:)
+          th3do(i,j,:,:)=th3d(i,j,:,:)
+      else
+          onetai(i,j)   = (thref+psikk(i,j,1)/pbot(i,j)) /
+     &                    (thref*(1.0-thref*(thkk(i,j,1)+thbase)))
+          onetao(i,j,:) = 1.0
+          oneta( i,j,:) = 1.0
+          tempo(i,j,:,:)=temp(i,j,:,:)
+          salno(i,j,:,:)=saln(i,j,:,:)
+          th3do(i,j,:,:)=th3d(i,j,:,:)
+      endif 
+      
 c
 c --- start with a thin mixed layer
       if     (hybrid) then

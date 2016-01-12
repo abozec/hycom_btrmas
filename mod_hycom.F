@@ -1107,9 +1107,12 @@ c --- Calling parameters
 c
 c --- Initialize (before the 1st time step).
 c
-      integer      i,j,k,nm,margin
+      integer      i,j,l,k,nm,margin,ind
       character*80 flnm,flnmra,flnmrb
 c
+      real,    allocatable :: xm(:,:),xs(:),worksg(:)
+      integer, allocatable :: iworksg(:)
+
       include 'stmt_fns.h'
 c
 #if defined(USE_ESMF)
@@ -1348,6 +1351,52 @@ c
 c
 c --- number of baroclinic time steps per day...
       nsteps_per_day = nint(86400.0/baclin)
+
+c --- calculate coeflx
+      if (btrlfr) then
+        if (nsteps_batrop.lt.lstep) then
+          if     (mnproc.eq.1) then
+            write(lp,*) 'nsteps_batrop = ',nsteps_batrop      
+            write(lp,*) 'nsteps_batrop too small, must be',lstep
+            call xcstop('(hycom)')
+            stop
+          endif
+        endif
+c
+        allocate(      xm(2*lstep+1,2*lstep+1),
+     &                 xs(2*lstep+1),
+     &             worksg(2*lstep+1),
+     &            iworksg(2*lstep+1) )
+c
+        do l= 1,2
+          xm(:,:) =  0.0
+          xm(1,1) =  1.0
+          xm(2,2) =  1.0
+          xm(2,1) = -1.0
+          do i= 3,l*lstep+1
+            xm(i,i)   = 1.0
+            xm(i,i-1) = wbaro-1.0
+            xm(i,i-2) = -wbaro
+          enddo !i
+          do j= 1,l*lstep+1
+            xs(:) = 0.0
+            xs(j) = 1.0
+            call sgefs(xm,2*lstep+1,l*lstep+1,xs,j,ind,
+     &                 worksg,iworksg)
+            coeflx(j,l) = xs(l*lstep+1)
+            if     (mnproc.eq.1) then
+              write(6,'(a,i2,i4,2f10.6)')
+     &           'l,j,coef,*1+wb =',
+     &            l,j,coeflx(j,l),coeflx(j,l)*(1.0+wbaro)
+            endif
+          enddo !j
+        enddo !l
+c
+        deallocate( xm, xs, worksg, iworksg )
+      else !.not.btrlfr
+        coeflx(:,:) = 0.0  !not used
+      endif !btrmas:else
+
 c
 c --- set up parameters defining the geographic environment
 c
@@ -2485,10 +2534,12 @@ c
       call cnuity(m,n)
          call xctmr1(40)
          call pipe_comparall(m,n, 'cnuity, step')
-         call xctmr0(41)
-      call tsadvc(m,n)
-         call xctmr1(41)
-         call pipe_comparall(m,n, 'tsadvc, step')
+
+!         call xctmr0(41)
+!      call tsadvc(m,n)
+!         call xctmr1(41)
+!         call pipe_comparall(m,n, 'tsadvc, step')
+
          call xctmr0(42)
       if     (momtyp.eq.2) then
         call momtum(m,n)
@@ -2498,9 +2549,23 @@ c
          call xctmr1(42)
          call pipe_comparall(m,n, 'momtum, step')
          call xctmr0(43)
+
+*      do k = 1, kk
+*         write(6,*)'k=',k
+*         call check_field_cstlon_ok(u(1-nbdy,1-nbdy,k,n),2,'uapmom')
+*         call check_field_cstlon_ok(v(1-nbdy,1-nbdy,k,n),3,'vapmom')
+*         call check_field_cstlon_ok(dp(1-nbdy,1-nbdy,k,n),1,'papmom')
+*      enddo
+
       call barotp(m,n)
          call xctmr1(43)
          call pipe_comparall(m,n, 'barotp, step')
+
+         call xctmr0(41)
+      call tsadvc(m,n)
+         call xctmr1(41)
+         call pipe_comparall(m,n, 'tsadvc, step')
+
          call xctmr0(44)
 #if defined(USE_CCSM3)
       call thermf_c(m,n)   !,mm,nn,k1m,k1n)
@@ -2628,6 +2693,33 @@ c
             call xctmr0(49)
             call xctmr1(49)
       endif !hybrid:isopyc
+*
+*      call check_field_arctic_ok(pbavg(1-nbdy,1-nbdy,1),1,1,'hbhyb1') 
+*      call check_field_arctic_ok(pbavg(1-nbdy,1-nbdy,2),1,1,'hbhyb2') 
+*      call check_field_arctic_ok(ubavg(1-nbdy,1-nbdy,1),2,2,'ubhyb1') 
+*      call check_field_arctic_ok(ubavg(1-nbdy,1-nbdy,2),2,2,'ubhyb2')
+*      call check_field_arctic_ok(vbavg(1-nbdy,1-nbdy,1),3,3,'vbhyb1')
+*      call check_field_arctic_ok(vbavg(1-nbdy,1-nbdy,2),3,3,'vbhyb2')
+*      do k = 1, kk
+*        call check_field_arctic_ok(temp(1-nbdy,1-nbdy,k,1),1,1,'thybg1')
+*        call check_field_arctic_ok(temp(1-nbdy,1-nbdy,k,2),1,1,'thybg2')
+*        call check_field_arctic_ok(saln(1-nbdy,1-nbdy,k,1),1,1,'shybg1')
+*        call check_field_arctic_ok(saln(1-nbdy,1-nbdy,k,2),1,1,'shybg2')
+*        call check_field_arctic_ok(th3d(1-nbdy,1-nbdy,k,1),1,1,'rhybg1')
+*        call check_field_arctic_ok(th3d(1-nbdy,1-nbdy,k,2),1,1,'rhybg2')
+*        call check_field_arctic_ok(dp(1-nbdy,1-nbdy,k,1),1,1,'hhybg1')
+*        call check_field_arctic_ok(dp(1-nbdy,1-nbdy,k,2),1,1,'hhybg2')
+*        call check_field_arctic_ok(u(1-nbdy,1-nbdy,k,1),2,2,'uhybg1')
+*        call check_field_arctic_ok(u(1-nbdy,1-nbdy,k,2),2,2,'uhybg2')
+*        call check_field_arctic_ok(v(1-nbdy,1-nbdy,k,1),3,3,'vhybg1')
+*        call check_field_arctic_ok(v(1-nbdy,1-nbdy,k,2),3,3,'vhybg2')
+*      enddo 
+!!Alex mv Robert-Asselin filter here from momtum and tsadv
+#if defined KEY_RASSELINUV
+          call  rasselin(m,n,.true.,.true.)
+#else
+          call  rasselin(m,n,.true.,.false.)
+#endif     
 c
 c --- update floats/moorings
       if     (synflt) then
@@ -2670,6 +2762,8 @@ c
      &    iyear,jday,ihour
 c
 c ---   diagnose mean sea surface height
+c ---   also calculate onetacon for mass calculations
+c
         if     (.not.allocated(sminy)) then
           allocate( sminy(1:jj), smaxy(1:jj) )
         endif
@@ -2680,6 +2774,14 @@ c ---   diagnose mean sea surface height
           smaxy(j)=-huge(smaxy(j))
           do i=1,ii
             if (SEA_P) then
+              if     (btrmas) then
+                onetacon(i,j,n) = oneta(i,j,n)
+              else
+* ---           original non-conserving diagnostics
+*               onetacon(i,j,n) = 1.0
+c ---           always use mass-conserving diagnostics
+                onetacon(i,j,n) = onetai(i,j) + pbavg(i,j,n)/pbot(i,j)
+              endif
               if     (tidflg.gt.0) then
                 util2(i,j)=(srfhgt(i,j)/g)**2*scp2(i,j)
               endif
@@ -2765,7 +2867,7 @@ c
                   vtotp=0.5*( v(i,j,  k,n)+vbavg(i,j,  n) +
      &                        v(i,j+1,k,n)+vbavg(i,j+1,n)  )
 #if defined(STOKES)
-                  util6(i,j)=dp(i,j,k,n)*scp2(i,j)*
+                  util6(i,j)=onetacon(i,j,n)*dp(i,j,k,n)*scp2(i,j)*
      &                      0.5*(1000.0+th3d(i,j,k,n)+thbase)*
      &                          (utotp**2+vtotp**2)
 c
@@ -2774,7 +2876,7 @@ c
                   vtotp=vtotp+0.5*( vsd(i,j,  k)+vsdbavg(i,j) +
      &                              vsd(i,j+1,k)+vsdbavg(i,j+1)  )
 #endif
-                  util4(i,j)=dp(i,j,k,n)*scp2(i,j)*
+                  util4(i,j)=onetacon(i,j,n)*dp(i,j,k,n)*scp2(i,j)*
      &                      0.5*(1000.0+th3d(i,j,k,n)+thbase)*
      &                          (utotp**2+vtotp**2)
                 endif !ip
@@ -3270,7 +3372,7 @@ c
                   vtotp=0.5*( v(i,j,  k,n)+vbavg(i,j,  n) +
      &                        v(i,j+1,k,n)+vbavg(i,j+1,n)  )
 #if defined(STOKES)
-                  util6(i,j)=dp(i,j,k,n)*scp2(i,j)*
+                  util6(i,j)=onetacon(i,j,n)*dp(i,j,k,n)*scp2(i,j)*
      &                      0.5*(1000.0+th3d(i,j,k,n)+thbase)*
      &                          (utotp**2+vtotp**2)
 c
@@ -3279,7 +3381,7 @@ c
                   vtotp=vtotp+0.5*( vsd(i,j,  k)+vsdbavg(i,j) +
      &                              vsd(i,j+1,k)+vsdbavg(i,j+1)  )
 #endif
-                util4(i,j)=dp(i,j,k,n)*scp2(i,j)*
+                util4(i,j)=onetacon(i,j,n)*dp(i,j,k,n)*scp2(i,j)*
      &                    0.5*(1000.0+th3d(i,j,k,n)+thbase)*
      &                        (utotp**2+vtotp**2)
 c
@@ -3395,7 +3497,8 @@ c
             do j=1,jj
               do i=1,ii
                 if (SEA_P) then
-                  util2(i,j)=dp(i,j,k,n)*scp2(i,j)*tracer(i,j,k,n,ktr)
+                    util2(i,j)=onetacon(i,j,n)*dp(i,j,k,n)*scp2(i,j)
+     &                        *tracer(i,j,k,n,ktr)
                 endif !ip
               enddo !i
             enddo !j

@@ -21,13 +21,13 @@ include Aintelsse-impi-sm-nc-btrmas_mpi
 
 MODS =   mod_dimensions.o mod_xc.o mod_za.o mod_cb_arrays.o mod_pipe.o \
          mod_incupd.o \
-         mod_floats.o mod_stokes.o mod_tides.o mod_mean.o mod_archiv.o \
+         mod_floats.o mod_stokes.o mod_tides.o mod_nc.o mod_mean.o mod_archiv.o \
          mod_tsadvc.o mod_momtum.o \
          mod_hycom.o
 
 MODD =   mod_dimensions.o mod_xc.o mod_za.o mod_cb_arrays.o mod_pipe.o \
          mod_incupd.o \
-         mod_floats.o mod_stokes.o mod_tides.o mod_mean.o mod_archiv.o \
+         mod_floats.o mod_stokes.o mod_tides.o mod_nc.o mod_mean.o mod_archiv.o \
          mod_tsadvc.o mod_momtum.o \
          mod_hycom_dummy.o
 
@@ -37,7 +37,7 @@ OBJS =	         barotp.o  bigrid.o blkdat.o  cnuity.o convec.o \
 	matinv.o mxkprf.o  mxkrt.o  mxkrtm.o  mxpwp.o \
 	overtn.o poflat.o  prtmsk.o  psmoo.o restart.o \
 	thermf.o trcupd.o  \
-       machine.o  wtime.o machi_c.o  isnan.o
+       machine.o  wtime.o machi_c.o  isnan.o sgefs.o asselin.o
 
 hycom:	$(MODS) $(OBJS) hycom.o
 	$(LD)  $(LDFLAGS) -o hycom  hycom.o $(MODS) $(OBJS) $(EXTRALIBS)
@@ -63,6 +63,7 @@ hycom.o:        hycom.F       mod_hycom.o
 hycom_cice.o:   hycom_cice.F  mod_hycom.o       mod_OICPL.o
 dummy_cice.o:   dummy_cice.F  mod_hycom_dummy.o mod_OICPL.o
 
+asselin.o:   asselin.F        mod_cb_arrays.o stmt_fns.h
 barotp.o:  barotp.F  mod_xc.o mod_cb_arrays.o                     mod_pipe.o \
 	                                                          mod_tides.o \
 	                                                          mod_stokes.o
@@ -100,6 +101,7 @@ poflat.o:  poflat.f
 prtmsk.o:  prtmsk.f
 psmoo.o:   psmoo.f   mod_xc.o 
 restart.o: restart.f mod_xc.o mod_cb_arrays.o            mod_za.o mod_tides.o
+sgefs.o:   sgefs.f
 thermf.o:  thermf.F  mod_xc.o mod_cb_arrays.o stmt_fns.h
 trcupd.o:  trcupd.F  mod_xc.o mod_cb_arrays.o                     mod_pipe.o
 wtime.o:   wtime.F
@@ -141,6 +143,8 @@ mod_mean.o: \
         mod_mean.F   mod_xc.o mod_cb_arrays.o            mod_za.o mod_stokes.o
 mod_archiv.o: \
         mod_archiv.F mod_xc.o mod_cb_arrays.o            mod_za.o mod_stokes.o
+mod_nc.o: \
+        mod_nc.F     mod_xc.o mod_cb_arrays.o            mod_za.o 
 
 mod_dimensions.o:   mod_dimensions.F dimensions.h dimensions_relo.h
 mod_xc.o: mod_xc.F  mod_dimensions.o mod_xc_sm.h mod_xc_mp.h
