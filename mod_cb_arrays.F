@@ -770,7 +770,7 @@ c
      &               iceflg,ishelf,icmflg,wndflg,ustflg,
      &               flxflg,empflg,dswflg,albflg,lwflag,sstflg,sssflg,
      &               difsmo,disp_count,
-     &               arcflg
+     &               arcflg,rivrtr
 c
       real,    parameter ::
      &  g     =   9.806,      !gravitational acceleration (m/s**2)
@@ -855,6 +855,13 @@ c
 #endif
      & tracero        ! inert tracer
 
+c --- T and S river !!Alex river
+#if defined(RELO)
+      real,save,allocatable, dimension(:,:,:) ::
+#else
+      real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm) ::
+#endif
+     & triver, sriver ! T and S river
       
       contains
 
@@ -981,9 +988,9 @@ c
      &         pbavg(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,3) )
       call mem_stat_add( 3*(idm+2*nbdy)*(jdm+2*nbdy)*3 )
 #endif
-               ubavg = r_init
-               vbavg = r_init
-               pbavg = r_init
+               ubavg = 0.0 
+               vbavg = 0.0
+               pbavg = 0.0
 
 #if defined(RELO)
       allocate(
@@ -1211,37 +1218,37 @@ c
      &         si_ty(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) )
       call mem_stat_add( 33*(idm+2*nbdy)*(jdm+2*nbdy) )
 #endif
-                 uja = r_init
-                 ujb = r_init
-                 via = r_init
-                 vib = r_init
-                pbot = r_init
-               sgain = r_init
+                 uja = 0.0
+                 ujb = 0.0
+                 via = 0.0
+                 vib = 0.0
+                pbot = 0.0
+               sgain = 0.0
                surtx = 0.    !!Alex
                surty = 0.    !!Alex
-              surflx = r_init
-              sswflx = r_init
-              mixflx = r_init
-              sstflx = r_init
-              sssflx = r_init
-              rivflx = r_init
-              salflx = r_init
-              buoflx = r_init
-              bhtflx = r_init
-               ustar = r_init
-              ustarb = r_init
-              turgen = r_init
-              thkice = r_init
-              covice = r_init
-              temice = r_init
+              surflx = 0.0
+              sswflx = 0.0
+              mixflx = 0.0
+              sstflx = 0.0
+              sssflx = 0.0
+              rivflx = 0.0
+              salflx = 0.0
+              buoflx = 0.0
+              bhtflx = 0.0
+               ustar = 0.0
+              ustarb = 0.0
+              turgen = 0.0
+              thkice = 0.0
+              covice = 0.0
+              temice = 0.0
               flxice = 0. 
               fswice = 0.
               sflice = 0.
-                si_c = r_init
-                si_h = r_init
-                si_t = r_init
-                si_u = r_init
-                si_v = r_init
+                si_c = 0.0
+                si_h = 0.0
+                si_t = 0.0
+                si_u = 0.0
+                si_v = 0.0
                si_tx = 0.
                si_ty = 0.
 c
@@ -1249,7 +1256,7 @@ c
 #if defined(RELO)
         allocate(wndocn(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy))
 #endif
-        wndocn = r_init
+        wndocn = 0.0
       endif !flxflg.eq.6
 c
 #if defined(RELO)
@@ -1599,6 +1606,16 @@ c --- wetting and drying !!Alex
                epspv = r_init
                 epsu = r_init
                 epsv = r_init
+
+c --- T and S river !!Alex river
+#if defined(RELO)
+      allocate(
+     &          triver(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm),
+     &          sriver(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm))
+      call mem_stat_add( 2*(idm+2*nbdy)*(jdm+2*nbdy)*kdm )
+#endif
+                triver = 0.0
+                sriver = 0.0
       
       end subroutine cb_allocate
 

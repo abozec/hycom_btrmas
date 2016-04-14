@@ -5178,6 +5178,21 @@ c
      &   '   time/call =',f14.8)
       end subroutine xctmrp
 #endif /* TIMER_ALLOUT:else */
+
+      subroutine gdsum(x,work)
+      real x,work
+#if defined(MPI)
+      include 'mpif.h'
+      integer mpierr
+
+      call MPI_ALLREDUCE(x,work,1,MPI_DOUBLE_PRECISION,mpi_sum,
+     &    mpi_comm_hycom, mpierr)
+#endif
+      x = work
+      return
+      end subroutine gdsum
+
+      
 c
 c  Revision history:
 c
@@ -5192,3 +5207,4 @@ c> Dec. 2012 - iisum bugfix for xcsumj
 c> Jan. 2014 - replaced mpistat with MPI_STATUS[ES]_IGNORE
 c> Jan. 2014 - ARCTIC xctilr bugfix for when called after xcsum
 c> Feb. 2015 - reduced buffering memory requirements
+

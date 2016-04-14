@@ -30,7 +30,9 @@ c
       if     (lbflag.eq.2) then
         call latbdt( 0,0)
       elseif (lbflag.eq.4) then
-        call latbdtf(0,0)
+          call latbdtf(0,0)
+      elseif (rivrtr.eq.1) then
+          call latbdt_river(0,0) !!Alex river
       else
 !$OMP PARALLEL DO PRIVATE(j,i)
 !$OMP&         SCHEDULE(STATIC,jblk)

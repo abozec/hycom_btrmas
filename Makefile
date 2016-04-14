@@ -37,7 +37,7 @@ OBJS =	         barotp.o  bigrid.o blkdat.o  cnuity.o convec.o \
 	matinv.o mxkprf.o  mxkrt.o  mxkrtm.o  mxpwp.o \
 	overtn.o poflat.o  prtmsk.o  psmoo.o restart.o \
 	thermf.o trcupd.o  \
-       machine.o  wtime.o machi_c.o  isnan.o sgefs.o asselin.o
+       machine.o  wtime.o machi_c.o  isnan.o sgefs.o asselin.o latbdt_river.o
 
 hycom:	$(MODS) $(OBJS) hycom.o
 	$(LD)  $(LDFLAGS) -o hycom  hycom.o $(MODS) $(OBJS) $(EXTRALIBS)
@@ -88,6 +88,7 @@ inikpp.o:  inikpp.f  mod_xc.o mod_cb_arrays.o stmt_fns.h
 inimy.o:   inimy.f   mod_xc.o mod_cb_arrays.o stmt_fns.h
 isnan.o:   isnan.F
 latbdy.o:  latbdy.F  mod_xc.o mod_cb_arrays.o                     mod_tides.o
+latbdt_river.o:  latbdt_river.F  mod_xc.o mod_cb_arrays.o         mod_nc.o
 machine.o: machine.F
 machi_c.o: machi_c.c
 matinv.o:  matinv.f  mod_xc.o mod_cb_arrays.o

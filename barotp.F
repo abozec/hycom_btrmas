@@ -261,7 +261,9 @@ c
             i=ifu(j,l)-1
             if (i.ge.1-margin) then
                 if (iuopn(i,j).ne.0) then
-                    flxloc(i,j) = ubavg(i,j,ml)*(depthu(i,j)*scuy(i,j))
+!!Alex river                   flxloc(i,j) = ubavg(i,j,ml)*(depthu(i,j)*scuy(i,j))
+                    flxloc(i,j) = ubavg(i,j,ml)*scuy(i,j)*
+     &                 max(0.,pbot(i,j)*onetai(i,j)+pbavg(i,j,ml))               
                     uflxba(i,j) = uflxba(i,j) +
      &                  coeflx(lll+1,icof)*(1.0+wblpf)*flxloc(i,j)
                 endif !iuopn
@@ -269,18 +271,20 @@ c
             i=ilu(j,l)+1
             if (i.le.ii+margin) then
                 if (iuopn(i,j).ne.0) then
-                    flxloc(i,j) = ubavg(i,j,ml)*(depthu(i,j)*scuy(i,j))
+!!Alex river                   flxloc(i,j) = ubavg(i,j,ml)*(depthu(i,j)*scuy(i,j))
+                    flxloc(i,j) = ubavg(i,j,ml)*scuy(i,j)*
+     &                 max(0.,pbot(i-1,j)*onetai(i-1,j)+pbavg(i-1,j,ml))            
                     uflxba(i,j) = uflxba(i,j) +
      &                  coeflx(lll+1,icof)*(1.0+wblpf)*flxloc(i,j)
                 endif !iuopn
             endif !i
-          enddo !l
+          enddo 
           do l=1,isv(j)
             do i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
               flyloc(i,j) = vbavg(i,j,ml)*(depthv(i,j)*scvx(i,j))
               vflxba(i,j) = vflxba(i,j) +
      &            coeflx(lll+1,icof)*(1.0+wblpf)*flyloc(i,j)
-            enddo !i  
+            enddo !i
           enddo !l
         enddo !j
 c
@@ -289,7 +293,9 @@ c
             j=jfv(i,l)-1
             if (j.ge.1-margin) then
                 if (ivopn(i,j).ne.0) then
-                    flyloc(i,j) = vbavg(i,j,ml)*(depthv(i,j)*scvx(i,j))
+!!Alex river                   flyloc(i,j) = vbavg(i,j,ml)*(depthv(i,j)*scvx(i,j))
+                    flyloc(i,j) = vbavg(i,j,ml)*scvx(i,j)*
+     &                 max(0.,pbot(i,j)*onetai(i,j)+pbavg(i,j,ml))               
                     vflxba(i,j) = vflxba(i,j) +
      &                  coeflx(lll+1,icof)*(1.0+wblpf)*flyloc(i,j)
                 endif !ivopn
@@ -297,13 +303,15 @@ c
             j=jlv(i,l)+1
             if (j.le.jj+margin) then
                 if (ivopn(i,j).ne.0) then
-                    flyloc(i,j) = vbavg(i,j,ml)*(depthv(i,j)*scvx(i,j))
+!!Alex river                   flyloc(i,j) = vbavg(i,j,ml)*(depthv(i,j)*scvx(i,j))
+                    flyloc(i,j) = vbavg(i,j,ml)*scvx(i,j)*
+     &                 max(0.,pbot(i,j-1)*onetai(i,j-1)+pbavg(i,j-1,ml))               
                     vflxba(i,j) = vflxba(i,j) +
      &                  coeflx(lll+1,icof)*(1.0+wblpf)*flyloc(i,j)
                 endif !ivopn
             endif !j
           enddo !l
-        enddo !i
+        enddo  !i
 c
         margin = mbdy - 1
 c
@@ -555,6 +563,8 @@ c
       elseif (lbflag.eq.4) then
         call latbdtf(nl,lll)
       endif
+
+      if (rivrtr.eq.1) call latbdt_river(nl,lll) !!Alex river
 c
       if     (lpipe .and. lpipe_barotp) then
         call pipe_compare_sym1(
@@ -860,6 +870,9 @@ c
       elseif (lbflag.eq.4) then
         call latbdtf(nl,lll+1)
       endif
+
+      if (rivrtr.eq.1) call latbdt_river(nl,lll) !!Alex river
+
 c
  840  continue  ! lll=1,lstep1,2
 c
@@ -908,7 +921,10 @@ c
         call pipe_compare(pbavg(1-nbdy,1-nbdy,3), ip,'barotp:pbav3')
       endif
 c
-      if     (btrlfr .and. delt1.ne.baclin) then  !not on very 1st time step
+c --- boundary conditions for ubavg,oneta in cnuity (see if still necessary since call above..)
+      if (rivrtr.eq.1) call latbdt_river(nl,lstep1+1) !!Alex river
+
+      if     (btrlfr .and. delt1.ne.baclin) then !not on very 1st time step
 c ---   Robert-Asselin time filter 
 !$OMP   PARALLEL DO PRIVATE(j,i,q)
 !$OMP&           SCHEDULE(STATIC,jblk)
@@ -1303,6 +1319,8 @@ c
          ml = mn
          mn = nl
          nl = i
+c
+         if (rivrtr.eq.1) call latbdt_river(mn,lll)
 c
       call xctilr(pbavg(  1-nbdy,1-nbdy,mn ),1, 1, 4,4, halo_ps)
       call xctilr(ubavg(  1-nbdy,1-nbdy,mn ),1, 1, 3,3, halo_uv)
@@ -2035,6 +2053,7 @@ c
 c                                 Boundary conditions for 
 c                                 ubavg, oneta in cnuity
 c                                 ------------------------
+      if (rivrtr.eq.1) call latbdt_river(nl,lstep1+1)
 c
                                 
 !$OMP PARALLEL DO PRIVATE(j,l,i)

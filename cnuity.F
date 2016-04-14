@@ -150,31 +150,50 @@ c
             i=ifu(j,l)-1
             if (i.ge.1-margin) then
               if (iuopn(i,j).ne.0) then
-                q=min(dp(i  ,j,k,n),max(0.0,depthu(i+1,j)-util3(i  ,j)))
-     &             * onetacon(i,j,n)    
+               if (iuopn(i,j).eq.1.or.nstep.eq.1) then
+                   q=min(dp(i,j,k,n),max(0.0,depthu(i+1,j)-util3(i,j)))
+     &              * onetacon(i,j,n)    
 #if defined(STOKES)
 !             write(6,*)'cnuity.F line 106,i+1,j,k= ',i+1,j,k
-                utotm(i,j)=(u(i+1,j,k,m)+ubavg(i,j,m)+
-     &                     usd(i+1,j,k))*scuy(i,j)
+                   utotm(i,j)=(u(i+1,j,k,m)+ubavg(i,j,m)+
+     &                       usd(i+1,j,k))*scuy(i,j)
 #else                
-                utotm(i,j)=(u(i+1,j,k,m)+ubavg(i,j,m))*scuy(i,j)
+                   utotm(i,j)=(u(i+1,j,k,m)+ubavg(i,j,m))*scuy(i,j)
 #endif                
-                uflux(i,j)=utotm(i,j)*q
+               else
+                  q=min(dp(i,j,k,n),max(0.,depthu(i+1,j)-util3(i,j)))
+     &             * (onetai(i,j) + pbavg(i,j,m) /pbot(i,j))
+     	          utotm(i,j)=ubavg(i,j,m)*scuy(i,j) ! no stock drift for rivers
+               endif
+                   
+                   uflux(i,j)=utotm(i,j)*q
+c --- flux used for river
+                if (iuopn(i,j).eq.2) uflx(i,j,k)=uflux(i,j)
               endif
             endif
             i=ilu(j,l)+1
             if (i.le.ii+margin) then
               if (iuopn(i,j).ne.0) then
-                q=min(dp(i-1,j,k,n),max(0.0,depthu(i-1,j)-util3(i-1,j)))
-     &             * onetacon(i-1,j,n)  
+               if (iuopn(i,j).eq.1.or.nstep.eq.1) then
+                   q=min(dp(i-1,j,k,n),max(0.0,depthu(i-1,j)
+     &                                        - util3(i-1,j)))
+     &                 * onetacon(i-1,j,n)  
 #if defined(STOKES)
 !               write(6,*)'cnuity.F line 119,i-1,j,k= ',i-1,j,k
-                utotm(i,j)=(u(i-1,j,k,m)+ubavg(i,j,m)+
-     &                      usd(i-1,j,k))*scuy(i,j)
+                   utotm(i,j)=(u(i-1,j,k,m)+ubavg(i,j,m)+
+     &                       usd(i-1,j,k))*scuy(i,j)
 #else               
-                utotm(i,j)=(u(i-1,j,k,m)+ubavg(i,j,m))*scuy(i,j)
+                   utotm(i,j)=(u(i-1,j,k,m)+ubavg(i,j,m))*scuy(i,j)
 #endif                
+               else
+                   q=min(dp(i-1,j,k,n),max(0.,depthu(i-1,j)
+     &                                       - util3(i-1,j)))
+     &             * (onetai(i-1,j) + pbavg(i-1,j,m) /pbot(i-1,j))
+                   utotm(i,j)=ubavg(i,j,m)*scuy(i,j) ! no stock drift for rivers
+               endif
                 uflux(i,j)=utotm(i,j)*q
+c --- flux used for river
+                if (iuopn(i,j).eq.2) uflx(i,j,k)=uflux(i,j)
               endif
             endif
           enddo
@@ -191,31 +210,51 @@ c
             j=jfv(i,l)-1
             if (j.ge.1-margin) then
               if (ivopn(i,j).ne.0) then
-                q=min(dp(i,j  ,k,n),max(0.0,depthv(i,j+1)-util3(i,j  )))
-     &             * onetacon(i,j,n)
+               if (ivopn(i,j).eq.1.or.nstep.eq.1) then
+                   q=min(dp(i,j  ,k,n),max(0.0,depthv(i,j+1)
+     &                                        - util3(i,j  )))
+     &                 * onetacon(i,j,n)
 #if defined(STOKES)
 !             write(6,*)'cnuity.F line 144,i,j+1,k= ',i,j+1,k
-                vtotm(i,j)=(v(i,j+1,k,m)+vbavg(i,j,m)+
-     &                      vsd(i,j+1,k))*scvx(i,j)
+                   vtotm(i,j)=(v(i,j+1,k,m)+vbavg(i,j,m)+
+     &                       vsd(i,j+1,k))*scvx(i,j)
 #else               
-                vtotm(i,j)=(v(i,j+1,k,m)+vbavg(i,j,m))*scvx(i,j)
+                   vtotm(i,j)=(v(i,j+1,k,m)+vbavg(i,j,m))*scvx(i,j)
 #endif                
+               else
+                   q=min(dp(i,j  ,k,n),max(0.,depthv(i,j+1)
+     &                                       - util3(i,j  )))
+     &             * (onetai(i,j) + pbavg(i,j,m) /pbot(i,j))
+                   vtotm(i,j)=vbavg(i,j,m)*scvx(i,j) ! no stock drift for rivers
+               endif
                 vflux(i,j)=vtotm(i,j)*q
+c --- flux used for river
+                if (ivopn(i,j).eq.2) vflx(i,j,k)=vflux(i,j)
               endif
             endif
             j=jlv(i,l)+1
             if (j.le.jj+margin) then
               if (ivopn(i,j).ne.0) then
-                q=min(dp(i,j-1,k,n),max(0.0,depthv(i,j-1)-util3(i,j-1)))
-     &             * onetacon(i,j-1,n)
+                 if (ivopn(i,j).eq.1.or.nstep.eq.1) then
+                     q=min(dp(i,j-1,k,n),max(0.0,depthv(i,j-1)
+     &                                          - util3(i,j-1)))
+     &                   * onetacon(i,j-1,n)
 #if defined(STOKES)
 !             write(6,*)'cnuity.F line 144,i,j-1,k= ',i,j-1,k
-                vtotm(i,j)=(v(i,j-1,k,m)+vbavg(i,j,m)+vsd(i,j-1,k)
-     &                                   )*scvx(i,j)
+                     vtotm(i,j)=(v(i,j-1,k,m)+vbavg(i,j,m)+vsd(i,j-1,k)
+     &                                                    )*scvx(i,j)
 #else              
-                vtotm(i,j)=(v(i,j-1,k,m)+vbavg(i,j,m))*scvx(i,j)
+                     vtotm(i,j)=(v(i,j-1,k,m)+vbavg(i,j,m))*scvx(i,j)
 #endif                
-                vflux(i,j)=vtotm(i,j)*q
+                 else
+                     q=min(dp(i,j-1,k,n),max(0.,depthv(i,j-1)
+     &                                         - util3(i,j-1)))
+     &                 * (onetai(i,j-1) + pbavg(i,j-1,m) /pbot(i,j-1))
+                     vtotm(i,j)=vbavg(i,j,m)*scvx(i,j) ! no stock drift for rivers
+                 endif
+                 vflux(i,j)=vtotm(i,j)*q
+c --- flux used for river
+                if (ivopn(i,j).eq.2) vflx(i,j,k)=vflux(i,j)
               endif
             endif
           enddo

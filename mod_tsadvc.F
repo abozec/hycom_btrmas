@@ -65,8 +65,10 @@ c
 
       contains
 
-      subroutine advem(advtyp,fld,fldc,u,v,fco,fcn,posdef,
-     &                 scal,scali,dt2)
+!      subroutine advem(advtyp,fld,fldc,u,v,fco,fcn,posdef,
+!     &                 scal,scali,dt2)
+      subroutine advem(advtyp,fld,fldc,u,v,fco,fcn,posdef, !!Alex river
+     &                 scal,scali,dt2,aux1)
       implicit none
 c
       integer, intent(in)    :: advtyp
@@ -75,6 +77,8 @@ c
      &         intent(inout) :: fld
       real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &         intent(in)    :: fldc,u,v,fco,fcn,scal,scali
+      real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &         intent(in),optional    :: aux1
 c
 c --- wrapper for advection schemes
 c
@@ -172,7 +176,12 @@ c
       elseif (advtyp.eq.2) then
         call advem_fct2(  fld,fldc,u,v,fco,fcn,       scal,scali,dt2)
       elseif (advtyp.eq.3) then  !btrmas
-        call advem_fct2c( fld,fldc,u,v,fco,fcn,       scal,scali,dt2)
+!        call advem_fct2c( fld,fldc,u,v,fco,fcn,       scal,scali,dt2)
+         if (rivrtr.eq.1) then
+             call advem_fct2c( fld,fldc,u,v,fco,fcn,scal,scali,dt2,aux1) !!Alex river
+         else 
+             call advem_fct2c( fld,fldc,u,v,fco,fcn,   scal,scali,dt2)
+         endif 
       elseif (advtyp.eq.4) then
         call advem_fct4(  fld,fldc,u,v,fco,fcn,       scal,scali,dt2)
       else
@@ -222,6 +231,7 @@ cdiag   endif
       endif !lconserve
       return
       end subroutine advem
+
 
       subroutine advem_mpdata(fld,u,v,fco,fcn,posdef,scal,scali,dt2)
       implicit none
@@ -988,7 +998,7 @@ c ---   compare two model runs.
       return
       end subroutine advem_fct2
 
-      subroutine advem_fct2c(fld,fldc,u,v,fco,fcn, scal,scali,dt2)
+      subroutine advem_fct2c(fld,fldc,u,v,fco,fcn, scal,scali,dt2,aux1)
       implicit none
 c
       real,    intent(in)    :: dt2
@@ -996,6 +1006,8 @@ c
      &         intent(inout) :: fld
       real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
      &         intent(in)    :: fldc,u,v,scal,scali,fco,fcn
+      real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &         intent(in),optional    :: aux1
 c
 c Leapfrog 2nd order FCT
 c S.T. Zalesak (1979): Fully multidimensional flux-corrected
@@ -1011,6 +1023,7 @@ c  fcn   - thickness of the layer at new    time step
 c  scal  - spatial increments (squared)
 c  scali - inverse of scal
 c  dt2   - temporal increment (from old to new)
+c  aux1  - value of the advected field at a river boundary (optional)
 c
 c  on return, fld's valid halo will be 0 wide.
 c
@@ -1146,6 +1159,46 @@ c
          enddo !l
          enddo !j
 !$OMP END PARALLEL DO
+
+         if (rivrtr.eq.1) then  !!Alex river
+             do j = 1-margin, jj+margin
+               do l = 1, isp(j)
+                 i = ifp(j,l)
+                 if (iuopn(i,j).eq.2) then
+                     if (ucumdt(i,j).ne.dt2) then
+                         uloc(i,j) =
+     &                        min(dt2-ucumdt(i,j),dtloc(i,j))*u(i,j)
+                         flx(i,j)  =  aux1(i,j)*uloc(i,j)
+                         ucumdt(i,j) = ucumdt(i,j) + 
+     &                       min(dt2-ucumdt(i,j),dtloc(i,j))
+                         flxcum(i,j) = flxcum(i,j) + flx(i,j)
+                     else
+                         uloc(i,j) = 0.
+                         flx(i,j)  = 0.
+                     endif
+                 endif
+                 i = ilp(j,l)+1
+                 if (i.le.ii+nbdy) then
+                     if (iuopn(i,j).eq.2) then
+                         if (ucumdt(i,j).ne.dt2) then
+                             uloc(i,j) =
+     &                        min(dt2-ucumdt(i,j),dtloc(i-1,j))*u(i,j)
+                             flx(i,j)  =  aux1(i,j)*uloc(i,j)
+                             ucumdt(i,j) = ucumdt(i,j) + 
+     &                           min(dt2-ucumdt(i,j),dtloc(i-1,j))
+                             flxcum(i,j) = flxcum(i,j) + flx(i,j)
+                         else
+                             uloc(i,j) = 0.
+                             flx(i,j)  = 0.
+                         endif
+!                         write(lp,*) 'tsadvu2 = ',u(i,j)
+!                         write(lp,*) 'tsadvflx2 = ',flxi,j)
+!                         write(lp,*) 'tsadvt2 = ',aux1(i,j)
+                     endif
+                 endif
+               enddo
+             enddo
+         endif
 c
 !$OMP PARALLEL DO PRIVATE(j,l,i)
 !$OMP&         SCHEDULE(STATIC,jblk)
@@ -1173,7 +1226,45 @@ c
          enddo !l
          enddo !j
 !$OMP END PARALLEL DO
+
 c
+         if (rivrtr.eq.1) then  !!Alex river
+             do i = 1-margin, ii+margin
+               do l = 1, jsp(i)
+                 j = jfp(i,l)
+                 if (ivopn(i,j).eq.2) then
+                     if (vcumdt(i,j).ne.dt2) then
+                         vloc(i,j) =
+     &                      min(dt2-vcumdt(i,j),dtloc(i,j))*v(i,j)
+                         fly(i,j)  =  aux1(i,j)*vloc(i,j)
+                         vcumdt(i,j) = vcumdt(i,j) + 
+     &                       min(dt2-vcumdt(i,j),dtloc(i,j))
+                         flycum(i,j) = flycum(i,j) + fly(i,j)
+                     else
+                         vloc(i,j) = 0.
+                         fly(i,j)  = 0.
+                     endif
+                 endif
+                 j = jlp(i,l)+1
+                 if (j.le.jj+nbdy) then
+                     if (ivopn(i,j).eq.2) then
+                         if (vcumdt(i,j).ne.dt2) then
+                             vloc(i,j) =
+     &                        min(dt2-vcumdt(i,j),dtloc(i,j-1))*v(i,j)
+                             fly(i,j)  =  aux1(i,j)*vloc(i,j)
+                             vcumdt(i,j) = vcumdt(i,j) + 
+     &                           min(dt2-vcumdt(i,j),dtloc(i,j-1))
+                             flycum(i,j) = flycum(i,j) + fly(i,j)
+                         else
+                             vloc(i,j) = 0.
+                             fly(i,j)  = 0.
+                         endif
+                     endif
+                 endif
+               enddo
+             enddo
+         endif
+
          margin = mbdy_a - 2
 
 !$OMP PARALLEL DO PRIVATE(j,l,i,q)
@@ -1729,6 +1820,7 @@ c ---   compare two model runs.
       return
       end subroutine advem_fct4
 
+
       subroutine tsadvc(m,n)
       use mod_cb_arrays  ! HYCOM saved arrays
       implicit none
@@ -1999,56 +2091,150 @@ c ---   compare two model runs.
         write (text,'(a9,i3)') 'th3d.n k=',k
         call pipe_compare_sym1(th3d(1-nbdy,1-nbdy,k,n),ip,text)
       endif
+c 
+c --- treat rivers
+c
+      if (.not.latemp) then
+          do j = 1-nbdy, jj+nbdy
+            do l = 1, isu(j)
+              i = ifu(j,l)-1
+              if (i.ge.1) then
+                  if (iuopn(i,j).eq.2) 
+     &          util5(i,j) = sig(triver(i,j,k),sriver(i,j,k))-thbase
+              endif
+              i = ilu(j,l) + 1
+              if (i.le.ii+nbdy) then
+                  if (iuopn(i,j).eq.2) 
+     &          util5(i,j) = sig(triver(i,j,k),sriver(i,j,k))-thbase
+              endif
+            enddo
+          enddo
+          do i = 1-nbdy, ii+nbdy
+            do l = 1, jsu(i)
+              j = jfv(i,l)-1
+              if (j.ge.1) then
+                  if (ivopn(i,j).eq.2) 
+     &          util5(i,j) = sig(triver(i,j,k),sriver(i,j,k))-thbase
+              endif
+              j = jlv(i,l) + 1
+              if (j.le.jj+nbdy) then
+                  if (ivopn(i,j).eq.2) 
+     &          util5(i,j) = sig(triver(i,j,k),sriver(i,j,k))-thbase
+              endif
+            enddo
+          enddo
+      endif
 c
 c --- rhs: temp.[mn], th3d.[mn], saln.[mn], uflx, vflx, util[12]
 c --- lhs: temp.n, th3d.n, saln.n
 c
       if     (latemp) then
-        call advem(advtyp,temp( 1-nbdy,1-nbdy,k,n),
-     &                    temp( 1-nbdy,1-nbdy,k,m),
-     &                    uflx( 1-nbdy,1-nbdy,k),
-     &                    vflx( 1-nbdy,1-nbdy,k),
-     &                    util1,util2,
-     &                    pdtemp, scp2,scp2i,delt1)
-        call advem(advtyp,saln( 1-nbdy,1-nbdy,k,n),
-     &                    saln( 1-nbdy,1-nbdy,k,m),
-     &                    uflx( 1-nbdy,1-nbdy,k),
-     &                    vflx( 1-nbdy,1-nbdy,k),
-     &                    util1,util2,
-     &                    pdzero, scp2,scp2i,delt1)
+          if (rivrtr.ne.1) then
+              call advem(advtyp,temp( 1-nbdy,1-nbdy,k,n),
+     &            temp( 1-nbdy,1-nbdy,k,m),
+     &            uflx( 1-nbdy,1-nbdy,k),
+     &            vflx( 1-nbdy,1-nbdy,k),
+     &            util1,util2,
+     &            pdtemp, scp2,scp2i,delt1)
+              call advem(advtyp,saln( 1-nbdy,1-nbdy,k,n),
+     &            saln( 1-nbdy,1-nbdy,k,m),
+     &            uflx( 1-nbdy,1-nbdy,k),
+     &            vflx( 1-nbdy,1-nbdy,k),
+     &            util1,util2,
+     &            pdzero, scp2,scp2i,delt1)
+          else 
+              call advem(advtyp,temp( 1-nbdy,1-nbdy,k,n),
+     &            temp( 1-nbdy,1-nbdy,k,m),
+     &            uflx( 1-nbdy,1-nbdy,k),
+     &            vflx( 1-nbdy,1-nbdy,k),
+     &            util1,util2,
+     &            pdtemp, scp2,scp2i,delt1,
+     &            triver( 1-nbdy,1-nbdy,k))
+              call advem(advtyp,saln( 1-nbdy,1-nbdy,k,n),
+     &            saln( 1-nbdy,1-nbdy,k,m),
+     &            uflx( 1-nbdy,1-nbdy,k),
+     &            vflx( 1-nbdy,1-nbdy,k),
+     &            util1,util2,
+     &            pdzero, scp2,scp2i,delt1,
+     &            sriver( 1-nbdy,1-nbdy,k))
+          endif 
       elseif (lath3d .and. hybrid) then
-        call advem(advtyp,th3d( 1-nbdy,1-nbdy,k,n),
-     &                    th3d( 1-nbdy,1-nbdy,k,m),
-     &                    uflx( 1-nbdy,1-nbdy,k),
-     &                    vflx( 1-nbdy,1-nbdy,k),
-     &                    util1,util2,
-     &                    pdth3d, scp2,scp2i,delt1)
-        call advem(advtyp,saln( 1-nbdy,1-nbdy,k,n),
-     &                    saln( 1-nbdy,1-nbdy,k,m),
-     &                    uflx( 1-nbdy,1-nbdy,k),
-     &                    vflx( 1-nbdy,1-nbdy,k),
-     &                    util1,util2,
-     &                    pdzero, scp2,scp2i,delt1)
-      elseif (lath3d .and. isopyc) then  ! MICOM-like upper layer
-        call advem(advtyp,th3d( 1-nbdy,1-nbdy,k,n),
-     &                    th3d( 1-nbdy,1-nbdy,k,m),
-     &                    uflux,
-     &                    vflux,
-     &                    util1,util2,
-     &                    pdth3d, scp2,scp2i,delt1)
-        call advem(advtyp,saln( 1-nbdy,1-nbdy,k,n),
-     &                    saln( 1-nbdy,1-nbdy,k,m),
-     &                    uflux,
-     &                    vflux,
-     &                    util1,util2,
-     &                    pdzero, scp2,scp2i,delt1)
+          if (rivrtr.ne.1) then
+              call advem(advtyp,th3d( 1-nbdy,1-nbdy,k,n),
+     &            th3d( 1-nbdy,1-nbdy,k,m),
+     &            uflx( 1-nbdy,1-nbdy,k),
+     &            vflx( 1-nbdy,1-nbdy,k),
+     &            util1,util2,
+     &            pdth3d, scp2,scp2i,delt1)
+              call advem(advtyp,saln( 1-nbdy,1-nbdy,k,n),
+     &            saln( 1-nbdy,1-nbdy,k,m),
+     &            uflx( 1-nbdy,1-nbdy,k),
+     &            vflx( 1-nbdy,1-nbdy,k),
+     &            util1,util2,
+     &            pdzero, scp2,scp2i,delt1)
+          else 
+              call advem(advtyp,th3d( 1-nbdy,1-nbdy,k,n),
+     &            th3d( 1-nbdy,1-nbdy,k,m),
+     &            uflx( 1-nbdy,1-nbdy,k),
+     &            vflx( 1-nbdy,1-nbdy,k),
+     &            util1,util2,
+     &            pdth3d, scp2,scp2i,delt1,
+     &            util5)
+              call advem(advtyp,saln( 1-nbdy,1-nbdy,k,n),
+     &            saln( 1-nbdy,1-nbdy,k,m),
+     &            uflx( 1-nbdy,1-nbdy,k),
+     &            vflx( 1-nbdy,1-nbdy,k),
+     &            util1,util2,
+     &            pdzero, scp2,scp2i,delt1,
+     &            sriver( 1-nbdy,1-nbdy,k))
+          endif
+      elseif (lath3d .and. isopyc) then ! MICOM-like upper layer
+          if (rivrtr.ne.1) then
+              call advem(advtyp,th3d( 1-nbdy,1-nbdy,k,n),
+     &            th3d( 1-nbdy,1-nbdy,k,m),
+     &            uflux,
+     &            vflux,
+     &            util1,util2,
+     &            pdth3d, scp2,scp2i,delt1)
+              call advem(advtyp,saln( 1-nbdy,1-nbdy,k,n),
+     &            saln( 1-nbdy,1-nbdy,k,m),
+     &            uflux,
+     &            vflux,
+     &            util1,util2,
+     &            pdzero, scp2,scp2i,delt1)
+          else
+              call advem(advtyp,th3d( 1-nbdy,1-nbdy,k,n),
+     &            th3d( 1-nbdy,1-nbdy,k,m),
+     &            uflux,
+     &            vflux,
+     &            util1,util2,
+     &            pdth3d, scp2,scp2i,delt1,
+     &            util5)
+              call advem(advtyp,saln( 1-nbdy,1-nbdy,k,n),
+     &            saln( 1-nbdy,1-nbdy,k,m),
+     &            uflux,
+     &            vflux,
+     &            util1,util2,
+     &            pdzero, scp2,scp2i,delt1,
+     &            sriver( 1-nbdy,1-nbdy,k))
+          endif 
       else   ! exactly isopycnal layer
-        call advem(advtyp,saln( 1-nbdy,1-nbdy,k,n),
-     &                    saln( 1-nbdy,1-nbdy,k,m),
-     &                    uflx( 1-nbdy,1-nbdy,k),
-     &                    vflx( 1-nbdy,1-nbdy,k),
-     &                    util1,util2,
-     &                    pdzero, scp2,scp2i,delt1)
+          if (rivrtr.ne.1) then
+              call advem(advtyp,saln( 1-nbdy,1-nbdy,k,n),
+     &            saln( 1-nbdy,1-nbdy,k,m),
+     &            uflx( 1-nbdy,1-nbdy,k),
+     &            vflx( 1-nbdy,1-nbdy,k),
+     &            util1,util2,
+     &            pdzero, scp2,scp2i,delt1)
+          else
+              call advem(advtyp,saln( 1-nbdy,1-nbdy,k,n),
+     &            saln( 1-nbdy,1-nbdy,k,m),
+     &            uflx( 1-nbdy,1-nbdy,k),
+     &            vflx( 1-nbdy,1-nbdy,k),
+     &            util1,util2,
+     &            pdzero, scp2,scp2i,delt1,
+     &            sriver( 1-nbdy,1-nbdy,k))
+          endif 
       endif
       do ktr= 1,ntracr
         if     (trcflg(ktr).eq.2) then !temperature tracer

@@ -77,14 +77,14 @@ c --- 'jdm   ' = latitudinal  array size
       call blkini(itest ,'idm   ')
       call blkini(jtest ,'jdm   ')
 c
-!      if     (itdm.eq.-1) then !serial relo case only !!ALex does not work without relo
-!        itdm = itest
-!        idm  = itest
-!        ii   = itest
-!        jtdm = jtest
-!        jdm  = jtest
-!        jj   = jtest
-!      endif
+      if     (itdm.eq.-1) then !serial relo case only !!ALex does not work without relo
+        itdm = itest
+        idm  = itest
+        ii   = itest
+        jtdm = jtest
+        jdm  = jtest
+        jj   = jtest
+      endif
 c
       if     (itest.ne.itdm) then
         if (mnproc.eq.1) then
@@ -2002,6 +2002,7 @@ c --- pcipf       use E-P forcing (may be redefined in forfun)
 c --- priver      rivers as a precipitation bogas
 c --- epmass      treat evap-precip as a mass exchange
 c
+c --- rivrtr      rivers as transport
 c --- srelax      activate surface salinity        climatological nudging
 c --- trelax      activate surface temperature     climatological nudging
 c --- relax       activate lateral boundary T/S/p  climatological nudging
@@ -2023,6 +2024,7 @@ c
       call blkinl(trcrlx,'trcrlx')
       call blkinl(priver,'priver')
       call blkinl(epmass,'epmass')
+      call blkini(rivrtr,'rivrtr')
       if (mnproc.eq.1) then
       write(lp,*)
       endif !1st tile
@@ -2425,6 +2427,25 @@ c
       endif
       return
  6000 format(a6,' =',l10)
+      end
+      subroutine blkinc(lvar,cvar,cfmt)
+      use mod_xc         ! HYCOM communication interface
+      use mod_cb_arrays  ! HYCOM saved arrays
+      implicit none
+c
+      character lvar*(*)
+c
+c     read in  a string of character
+cc
+      character*6 cvarin
+      character cvar*6,cfmt*(*)
+c
+      read(uoff+99,*) lvar,cvarin
+      if (mnproc.eq.1) then
+      write(lp,cfmt) cvarin,lvar
+      call flush(lp)
+      endif !1st tile
+c
       end
 c>
 c> Revision history
