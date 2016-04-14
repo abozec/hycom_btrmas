@@ -173,8 +173,9 @@
       real*8,dimension(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm),intent(in)::
      &  var_nc3d
       character(len=*), intent(in) :: file_name,var_name
+      CHARACTER*(NF_MAX_NAME) recname
 
-      integer ::  ncid,i,j,k
+      integer ::  ncid,i,j,k,nrec
       integer  , parameter :: ndims=4
       integer  , parameter :: nrecs=5
       character(len=*), parameter :: lvl_name  = 'layer'
@@ -186,8 +187,9 @@
       character(len=*), parameter :: lon_units = 'degrees_east'
       integer :: lvl_dimid, lon_dimid, lat_dimid, rec_dimid,
      &           lon_varid, lat_varid, var_varid, retval
-      integer, dimension(ndims) :: dimids, start, count
+      integer, dimension(ndims) :: dimids, start, count,rec_varid
       integer, dimension(2)     :: cdimids
+      logical :: wcoord
 
 ! --------------------------------------------------------------
 !            OPEN NETCDF FILE
@@ -195,12 +197,18 @@
       if (mnproc.eq.1) then              
 !---  Create the file 
           retval = nf_create(file_name, nf_noclobber, ncid)
-          if (retval .ne. nf_noerr) call handle_err(retval)
 
 !---  Check if file exists or not      
           if (retval .eq. nf_eexist) then
-              retval= nf_open(file_name, nf_write, ncid)
+              retval = nf_open(file_name, nf_write, ncid)
+              retval = nf_inq_varid(ncid,var_name,var_varid)
+              if (retval .ne. nf_noerr) call handle_err(retval)
+              wcoord = .false.
           else
+!---  Check if file exists or not      
+!          if (retval .eq. nf_eexist) then
+!              retval= nf_open(file_name, nf_write, ncid)
+!          else
 
 !---  Define the dimensions 
               retval = nf_def_dim(ncid,lvl_name,kdm ,lvl_dimid)
@@ -244,8 +252,13 @@
 !---  End define mode
               retval = nf_enddef(ncid)
               if (retval .ne. nf_noerr) call handle_err(retval)
-
+              wcoord = .true.
           endif  ! .nf_exist. 
+! --- check time status
+          retval = nf_inq_dimid (ncid, rec_name, rec_varid)
+          if (retval .ne. nf_noerr) call handle_err(retval)
+          retval = nf_inq_dimlen(ncid, rec_varid, nrec)
+          if (retval .ne. nf_noerr) call handle_err(retval)
       endif  ! mnproc.eq.1
 
 !---  Write the coordinate lon/lat 
@@ -256,8 +269,10 @@
       enddo
       call xcaget(worknc1, util1, 1) !! get value from all procs
       if (mnproc.eq.1) then
+        if (wcoord) then
           retval = nf_put_var_double(ncid, lat_varid, worknc1)
           if (retval .ne. nf_noerr) call handle_err(retval)
+        endif ! wcoord
       endif  ! mnproc
       do j=1,jj
         do i=1,ii
@@ -266,8 +281,10 @@
       enddo      
       call xcaget(worknc1, util1, 1) !! get value from all procs
       if (mnproc.eq.1) then
+        if (wcoord) then
           retval = nf_put_var_double(ncid, lon_varid, worknc1)
           if (retval .ne. nf_noerr) call handle_err(retval)
+        endif ! wcoord
       endif ! mnproc
 
 !---  Write one timestep of data 
@@ -279,7 +296,7 @@
           start(1) = 1
           start(2) = 1
           start(3) = 1
-          start(4) = 1
+          start(4) = nrec+1
       endif ! mnproc
 
 

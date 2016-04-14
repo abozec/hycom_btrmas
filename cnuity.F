@@ -1397,7 +1397,8 @@ c
 c ---   rhs: dp.n, p, pbot
 c ---   lhs: dp.n, p, dpmixl.n
 c
-        margin = 0
+*        margin = 0
+        margin = 1 !!Alex (2.2.99)
 !$OMP   PARALLEL DO PRIVATE(j,l,i)
 !$OMP&           SCHEDULE(STATIC,jblk)
         do j=1-margin,jj+margin

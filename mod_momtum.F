@@ -90,7 +90,7 @@ c
                 stresy = r_init
                   dpmx = r_init
                 thkbop = r_init
-             oneta_mtm = r_init
+             oneta_mtm = 0.0
       endif
 #endif
 c
@@ -102,6 +102,10 @@ c --- dp has up to date halos from cnuity or mod_hycom
       call xctilr(saln(  1-nbdy,1-nbdy,1,m),1,  kk, 6,6, halo_ps)
       call xctilr(temp(  1-nbdy,1-nbdy,1,m),1,  kk, 6,6, halo_ps)
       call xctilr(th3d(  1-nbdy,1-nbdy,1,m),1,  kk, 6,6, halo_ps)
+
+      call xctilr(oneta(  1-nbdy,1-nbdy,  n),1, 1, 6,6, halo_ps) !!Alex
+      call xctilr(oneta(  1-nbdy,1-nbdy,  m),1, 1, 6,6, halo_ps)
+
       if     (windf .and. iceflg.eq.2) then
         kl=max(nsigma,1)
         call xctilr(u(      1-nbdy,1-nbdy,1,n),1,kl, 1,1, halo_uv)
@@ -929,6 +933,7 @@ c
 #if defined(STOKES)
       use mod_stokes     ! Stokes Drift Velocity Module
 #endif
+      use mod_nc  !Netcdf output 
       implicit none
 c
       integer m,n
@@ -3139,22 +3144,19 @@ cRB
       do 14 j=1-margin,jj+margin
       do 14 k=1,kk
 c
-      do 12 l=1,isp(j)
-      do 12 i=max(1-margin,ifp(j,l)),min(ii+margin,ilp(j,l))
-      p(i,j,k+1)=p(i,j,k)+dp(i,j,k,n)
- 12   continue
+        do 12 i=1-margin,ii+margin
+          if (SEA_P) p(i,j,k+1)=p(i,j,k)+dp(i,j,k,n)
+ 12     continue
 c
 c --- compute new -dpu,dpv- field. save old -dpu,dpv- values in -pu,pv-.
 c
-      do 13 l=1,isu(j)
-      do 13 i=max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
-      pu(i,j,k+1)=dpu(i,j,k,n)
- 13   continue
+        do 13 i=1-margin,ii+margin
+          if (SEA_U) pu(i,j,k+1)=dpu(i,j,k,n)
+ 13     continue
 c
-      do 14 l=1,isv(j)
-      do 14 i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
-      pv(i,j,k+1)=dpv(i,j,k,n)
- 14   continue
+        do 14 i=1-margin,ii+margin
+          if (SEA_V) pv(i,j,k+1)=dpv(i,j,k,n)
+ 14     continue
 !$OMP END PARALLEL DO
 c
       call dpudpv(dpu(1-nbdy,1-nbdy,1,n),
@@ -3171,66 +3173,68 @@ c
 !$OMP PARALLEL DO PRIVATE(j,l,i,k,ka,q)
 !$OMP&         SCHEDULE(STATIC,jblk)
       do 30 j=1-margin,jj+margin
-c
-      do 31 l=1,isu(j)
-c
+cc
 c NF Reorganisation of the calculation - strict equivalence
 c
-      do 32 i=max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
-         utotn(i,j)=u(i,j,1,n)*dpu(i,j,1,n) ! 0.
- 32   continue
-      do 33 k=2,kk
-      do 33 i=max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
-            q=min(dpu(i,j,k,m),dpu(i,j,k,n),cutoff)/cutoff
-            u(i,j,k,n)=u(i,j,k,n)*q+u(i,j,k-1,n)*(1.-q)
-         utotn(i,j)=utotn(i,j)+u(i,j,k,n)*dpu(i,j,k,n)
- 33   continue
-      do 31 i=max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
-         utotn(i,j)=utotn(i,j)/depthu(i,j)
- 31   continue
+        do 32 i=1-margin,ii+margin
+          if (SEA_U) utotn(i,j)=u(i,j,1,n)*dpu(i,j,1,n) ! 0.
+ 32     continue
+        do 33 k=2,kk
+          do 33 i=1-margin,ii+margin
+            if (SEA_U) then
+                q=min(dpu(i,j,k,m),dpu(i,j,k,n),cutoff)/cutoff
+                u(i,j,k,n)=u(i,j,k,n)*q+u(i,j,k-1,n)*(1.-q)
+                utotn(i,j)=utotn(i,j)+u(i,j,k,n)*dpu(i,j,k,n)
+            endif 
+ 33       continue
+          do 31 i=1-margin,ii+margin
+            if (SEA_U) utotn(i,j)=utotn(i,j)/depthu(i,j)
+ 31       continue
 c
-      do 34 l=1,isv(j)
 c NF same as loop 32/33
-      do 35 i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
-         vtotn(i,j)=v(i,j,1,n)*dpv(i,j,1,n) ! 0.
- 35   continue
-      do 36 k=2,kk !  k= 1,kk
-      ! ka= max(1,k-1)
-      do 36 i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
-            q=min(dpv(i,j,k,m),dpv(i,j,k,n),cutoff)/cutoff
-            v(i,j,k,n)= v(i,j,k,n)*q+v(i,j,k-1,n)*(1.-q)
-         vtotn(i,j)=vtotn(i,j)+v(i,j,k,n)*dpv(i,j,k,n)
- 36   continue
-      do 34 i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
-         vtotn(i,j)=vtotn(i,j)/depthv(i,j)
- 34   continue
+          do 35 i=1-margin,ii+margin
+            if (SEA_V) vtotn(i,j)=v(i,j,1,n)*dpv(i,j,1,n) ! 0.
+ 35       continue
+          do 36 k=2,kk          !  k= 1,kk
+            ! ka= max(1,k-1)
+            do 36 i=1-margin,ii+margin
+              if (SEA_V) then
+                  q=min(dpv(i,j,k,m),dpv(i,j,k,n),cutoff)/cutoff
+                  v(i,j,k,n)= v(i,j,k,n)*q+v(i,j,k-1,n)*(1.-q)
+                  vtotn(i,j)=vtotn(i,j)+v(i,j,k,n)*dpv(i,j,k,n)
+              endif 
+ 36         continue
+            do 34 i=1-margin,ii+margin
+              if (SEA_V) vtotn(i,j)=vtotn(i,j)/depthv(i,j)
+ 34         continue
 c
- 30   continue
+ 30       continue
 !$OMP END PARALLEL DO
 c
 c --- time smoothing of -u,v- fields  (part 2)
 c
 !$OMP PARALLEL DO PRIVATE(j,k,l,i)
 !$OMP&         SCHEDULE(STATIC,jblk)
-      do 22 j=1-margin,jj+margin
-      do 22 k=1,kk
+          do 22 j=1-margin,jj+margin
+            do 22 k=1,kk
 c
-      do 23 l=1,isu(j)
-      do 23 i=max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
-         u(i,j,k,n)=u(i,j,k,n)-utotn(i,j)
-
-      u(i,j,k,m)=(u(i,j,k,m)+u(i,j,k,n)*wuv2*dpu(i,j,k,n))/
-     &   (wuv1*dpu(i,j,k,m)+onemm+wuv2*(pu(i,j,k+1)+dpu(i,j,k,n)))
- 23   continue
+              do 23 i=1-margin,ii+margin
+                if (SEA_U) then
+                  u(i,j,k,n)=u(i,j,k,n)-utotn(i,j)
+                  u(i,j,k,m)=(u(i,j,k,m)+u(i,j,k,n)*wuv2*dpu(i,j,k,n))/
+     &         (wuv1*dpu(i,j,k,m)+onemm+wuv2*(pu(i,j,k+1)+dpu(i,j,k,n)))
+                endif 
+ 23           continue
 c
-      do 24 l=1,isv(j)
-      do 24 i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
-         v(i,j,k,n)=v(i,j,k,n)-vtotn(i,j)
-      v(i,j,k,m)=(v(i,j,k,m)+v(i,j,k,n)*wuv2*dpv(i,j,k,n))/
-     &   (wuv1*dpv(i,j,k,m)+onemm+wuv2*(pv(i,j,k+1)+dpv(i,j,k,n)))
- 24   continue
+              do 24 i=1-margin,ii+margin
+                if (SEA_V) then
+                   v(i,j,k,n)=v(i,j,k,n)-vtotn(i,j)
+                   v(i,j,k,m)=(v(i,j,k,m)+v(i,j,k,n)*wuv2*dpv(i,j,k,n))/
+     &         (wuv1*dpv(i,j,k,m)+onemm+wuv2*(pv(i,j,k+1)+dpv(i,j,k,n)))
+                endif 
+ 24            continue
 c
- 22   continue
+ 22          continue
 !$OMP END PARALLEL DO
 c
       if (btrlfr) then
@@ -3238,21 +3242,22 @@ c
 !$OMP&         SCHEDULE(STATIC,jblk)
          do 868 j=1-margin,jj+margin
 c
-         do 861 l=1,isu(j)
-         do 861 i=max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
-            utotn(i,j)=utotn(i,j)*dt1inv
-            ubavg(i,j,3)=ubavg(i,j,n)
+           do 861 i=1-margin,ii+margin
+             if (SEA_U) then
+                 utotn(i,j)=utotn(i,j)*dt1inv
+                 ubavg(i,j,3)=ubavg(i,j,n)
+             endif 
  861     continue
 c
-         do 862 l=1,isv(j)
-         do 862 i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
-            vtotn(i,j)=vtotn(i,j)*dt1inv
-            vbavg(i,j,3)=vbavg(i,j,n)
+         do 862 i=1-margin,ii+margin
+           if (SEA_V) then
+               vtotn(i,j)=vtotn(i,j)*dt1inv
+               vbavg(i,j,3)=vbavg(i,j,n)
+           endif 
  862     continue
 c
-         do 863 l=1,isp(j)
-         do 863 i=max(1-margin,ifp(j,l)),min(ii+margin,ilp(j,l))
-            pbavg(i,j,3)=pbavg(i,j,n)
+         do 863 i=1-margin,ii+margin
+            if (SEA_P) pbavg(i,j,3)=pbavg(i,j,n)
  863     continue
 c
  868     continue
@@ -3262,26 +3267,28 @@ c
 !$OMP&         SCHEDULE(STATIC,jblk)
          do 867 j=1-margin,jj+margin
 c
-         do 864 l=1,isu(j)
-         do 864 i=max(1-margin,ifu(j,l)),min(ii+margin,ilu(j,l))
-            utotn(i,j)=utotn(i,j)*dt1inv
-            ubavg(i,j,n)=ubavg(i,j,m)
- 864     continue
+           do 864 i=1-margin,ii+margin
+             if (SEA_U) then
+                 utotn(i,j)=utotn(i,j)*dt1inv
+                 ubavg(i,j,n)=ubavg(i,j,m)
+             endif 
+ 864       continue
 c
-         do 865 l=1,isv(j)
-         do 865 i=max(1-margin,ifv(j,l)),min(ii+margin,ilv(j,l))
-            vtotn(i,j)=vtotn(i,j)*dt1inv
-            vbavg(i,j,n)=vbavg(i,j,m)
- 865     continue
+           do 865 i=1-margin,ii+margin
+             if (SEA_V) then
+                 vtotn(i,j)=vtotn(i,j)*dt1inv
+                 vbavg(i,j,n)=vbavg(i,j,m)
+             endif 
+ 865       continue
 c
-         do 866 l=1,isp(j)
-         do 866 i=max(1-margin,ifp(j,l)),min(ii+margin,ilp(j,l))
-            pbavg(i,j,n)=pbavg(i,j,m)
- 866     continue
+           do 866 i=1-margin,ii+margin
+             if (SEA_P) pbavg(i,j,n)=pbavg(i,j,m)
+ 866       continue
 c
  867     continue
 !$OMP END PARALLEL DO
       endif
+
 #else
 c
 c --- update dpu.m,dpv.m to time level t   with RA time smoother

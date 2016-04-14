@@ -271,7 +271,7 @@ c
       enddo
 c
 c --- determine do-loop limits for u,v,p,q points, and update halo for depths
-      call bigrid(depths, mapflg, util1,util2,util3)
+      call bigrid(depths, mapflg, dp_wet,util1,util2,util3)
 ccc      call prtmsk(ip,depths,util1,idm,ii,jj,0.0,1.0,
 ccc     &     'bottom depth (m)')
 c

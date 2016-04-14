@@ -63,6 +63,21 @@ c --- information (gindex) that keeps do loops from running into land
      &         jsp,jsq,jsu,jsv
       logical, save, allocatable, dimension (:) ::
      &         allip,alliq,alliu,alliv
+c --- new indexes for the barotropic solver - Wetting/Drying case !!Alex
+      integer, save, allocatable, dimension (:,:) ::
+     &        ip_w,ip_nw,iu_w,iu_nw,iv_w,iv_nw
+      integer, save, allocatable, dimension (:,:) ::
+     &         ifp_w,ilp_w,ifu_w,ilu_w,ifv_w,ilv_w,
+     &         ifp_nw,ilp_nw,ifu_nw,ilu_nw,ifv_nw,ilv_nw
+      integer, save, allocatable, dimension (:,:) ::
+     &         jfp_w,jlp_w,jfu_w,jlu_w,jfv_w,jlv_w,
+     &         jfp_nw,jlp_nw,jfu_nw,jlu_nw,jfv_nw,jlv_nw
+      integer, save, allocatable, dimension (:) ::
+     &         isp_w,isu_w,isv_w,
+     &         isp_nw,isu_nw,isv_nw
+      integer, save, allocatable, dimension (:) ::
+     &         jsp_w,jsu_w,jsv_w,
+     &         jsp_nw,jsu_nw,jsv_nw
 #else
       include 'dimensions.h'
 c
@@ -101,6 +116,21 @@ c --- information to keep do loops from running into land
      &         jsp,jsq,jsu,jsv
       logical, save, dimension (1-nbdy:jdm+nbdy) ::
      &         allip,alliq,alliu,alliv
+c --- new indexes for the barotropic solver - Wetting/Drying case !!Alex
+      integer, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) ::
+     &        ip_w,ip_nw,iu_w,iu_nw,iv_w,iv_nw
+      integer, dimension (1-nbdy:jdm+nbdy,ms) ::
+     &         ifp_w,ilp_w,ifu_w,ilu_w,ifv_w,ilv_w,
+     &         ifp_nw,ilp_nw,ifu_nw,ilu_nw,ifv_nw,ilv_nw
+      integer, dimension (1-nbdy:idm+nbdy,ms) ::
+     &         jfp_w,jlp_w,jfu_w,jlu_w,jfv_w,jlv_w,
+     &         jfp_nw,jlp_nw,jfu_nw,jlu_nw,jfv_nw,jlv_nw
+      integer, dimension (1-nbdy:jdm+nbdy) ::
+     &         isp_w,isu_w,isv_w,
+     &         isp_nw,isu_nw,isv_nw
+      integer, dimension (1-nbdy:idm+nbdy) ::
+     &         jsp_w,jsu_w,jsv_w,
+     &         jsp_nw,jsu_nw,jsv_nw
 #endif
 c
 c --- line printer unit (stdout)
@@ -189,7 +219,67 @@ c
      &           alliu(1-nbdy:jdm+nbdy),
      &           alliv(1-nbdy:jdm+nbdy) )
       call mem_stat_add( 2*(jdm+2*nbdy) )  !real=2*logical
+
+c --- allocate for wetting and drying index
+      allocate(
+     &           ip_w(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &           iu_w(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &           iv_w(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &          ip_nw(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &          iu_nw(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &          iv_nw(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy))
+      call mem_stat_add( 6*(idm+2*nbdy)*(jdm+2*nbdy) )  !real=2*int
 c
+      allocate(
+     &              ifp_w(1-nbdy:jdm+nbdy,ms),
+     &              ilp_w(1-nbdy:jdm+nbdy,ms),
+     &              ifu_w(1-nbdy:jdm+nbdy,ms),
+     &              ilu_w(1-nbdy:jdm+nbdy,ms),
+     &              ifv_w(1-nbdy:jdm+nbdy,ms),
+     &              ilv_w(1-nbdy:jdm+nbdy,ms),
+     &             ifp_nw(1-nbdy:jdm+nbdy,ms),
+     &             ilp_nw(1-nbdy:jdm+nbdy,ms),
+     &             ifu_nw(1-nbdy:jdm+nbdy,ms),
+     &             ilu_nw(1-nbdy:jdm+nbdy,ms),
+     &             ifv_nw(1-nbdy:jdm+nbdy,ms),
+     &             ilv_nw(1-nbdy:jdm+nbdy,ms) )
+      call mem_stat_add( 6*(jdm+2*nbdy)*ms )  !real=2*int
+c
+      allocate(
+     &              jfp_w(1-nbdy:idm+nbdy,ms),
+     &              jlp_w(1-nbdy:idm+nbdy,ms),
+     &              jfu_w(1-nbdy:idm+nbdy,ms),
+     &              jlu_w(1-nbdy:idm+nbdy,ms),
+     &              jfv_w(1-nbdy:idm+nbdy,ms),
+     &              jlv_w(1-nbdy:idm+nbdy,ms),
+     &             jfp_nw(1-nbdy:idm+nbdy,ms),
+     &             jlp_nw(1-nbdy:idm+nbdy,ms),
+     &             jfu_nw(1-nbdy:idm+nbdy,ms),
+     &             jlu_nw(1-nbdy:idm+nbdy,ms),
+     &             jfv_nw(1-nbdy:idm+nbdy,ms),
+     &             jlv_nw(1-nbdy:idm+nbdy,ms) )
+      call mem_stat_add( 6*(idm+2*nbdy)*ms )  !real=2*int
+c
+      allocate(
+     &             isp_w(1-nbdy:jdm+nbdy),
+     &             isu_w(1-nbdy:jdm+nbdy),
+     &             isv_w(1-nbdy:jdm+nbdy),
+     &            isp_nw(1-nbdy:jdm+nbdy),
+     &            isu_nw(1-nbdy:jdm+nbdy),
+     &            isv_nw(1-nbdy:jdm+nbdy) )
+      call mem_stat_add( 3*(jdm+2*nbdy) )  !real=2*int
+c
+      allocate(
+     &             jsp_w(1-nbdy:idm+nbdy),
+     &             jsu_w(1-nbdy:idm+nbdy),
+     &             jsv_w(1-nbdy:idm+nbdy),
+     &            jsp_nw(1-nbdy:idm+nbdy),
+     &            jsu_nw(1-nbdy:idm+nbdy),
+     &            jsv_nw(1-nbdy:idm+nbdy) )
+      call mem_stat_add( 3*(idm+2*nbdy) )  !real=2*int
+
+
+
       end subroutine gindex_allocate
 #endif /* RELO */
 

@@ -268,6 +268,26 @@ c
 #endif
      &    coeflx                ! used to diagnose the barotropic mass flux
 c
+c --- wetting / drying !!Alex
+#if defined(RELO)
+      real, save, allocatable, dimension(:,:) ::
+#else
+      real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) ::
+#endif
+     &      hcpp,     ! weighting factor on p points
+     &      hcpu,     ! weighting factor on u points
+     &      hcpv,     ! weighting factor on v points
+     &      hcu,      ! weighting factor on u points
+     &      hcv,      ! weighting factor on v points
+     &      invhcpu,  ! inv. of weighting factor on u points
+     &      invhcpv,  ! inv. of weighting factor on v points
+     &      invhcu,   ! inv. of weighting factor on u points
+     &      invhcv,   ! inv. of weighting factor on v points
+     &      epspu,    ! small parameter on u points
+     &      epspv,    ! small parameter on v points
+     &      epsu,     ! small parameter on u points
+     &      epsv      ! small parameter on v points
+c
 c ---  s w i t c h e s    (if set to .true., then...)
 c --- btrlfr      leapfrog barotropic time step
 c --- btrmas      barotropic is mass conserving
@@ -714,6 +734,7 @@ c --- 'difsmo' = KPROF: number of layers with horiz smooth diff coeffs
 c --- 'sssrmu' = SSS relaxation (# days of relaxation; -ve spatially varying ) !!Alex
 c --- 'sstrmu' = SST relaxation (# days of relaxation; -ve spatially varying ) !!Alex
 c --- 'arcflg' = archive flag (0=Binary[ab],1=Netcdf[nc]) !!Alex
+c --- 'dp_wet' = depth at which you activate wetting and drying; neg. disactivates wet/dry !!Alex
 c
 #if defined(RELO)
       real, save, allocatable, dimension(:) ::
@@ -732,7 +753,7 @@ c
      &               drglim,drgscl,thkdrg,
      &               dsurfq,diagfq,proffq,tilefq,meanfq,
      &               rstrfq,bnstfq,nestfq,
-     &               ra2fac,wbaro,
+     &               ra2fac,wbaro,dp_wet,
      &               thkmls,thkmlt,thkriv,thkmin,bldmin,bldmax,thkbot,
      &               thkcdw,thkfrz,tfrz_0,tfrz_s,ticegr,hicemn,hicemx,
      &               dp00,dp00f,dp00x,ds00,ds00f,ds00x,dp00i,isotop,
@@ -1004,7 +1025,7 @@ c
                vbrhs = r_init
                utotm = r_init
                vtotm = r_init
-               utotn = r_init
+               utotn = 0.0 !!Alex 
                vtotn = r_init
                uflux = r_init
                vflux = r_init
@@ -1503,9 +1524,9 @@ c
         allocate(   work1(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm) ) 
         call mem_stat_add(     (idm+2*nbdy)*(jdm+2*nbdy)*kdm )
 #endif
-        worknc1  = r_init
-        worknc2  = r_init
-        work1    = r_init
+        worknc1   = r_init
+        worknc2   = r_init
+        work1     = r_init
       endif ! arcflg
 
 c --- Robert-Asselin filter
@@ -1547,6 +1568,37 @@ c
                     q2o  = r_init
                     q2lo = r_init
       endif 
+c --- wetting and drying !!Alex
+#if defined(RELO)
+      allocate(
+     &        hcpp(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &        hcpu(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &        hcpv(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &         hcu(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &         hcv(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &     invhcpu(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &     invhcpv(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &      invhcu(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &      invhcv(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &       epspu(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &       epspv(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &        epsu(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &        epsv(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy))
+      call mem_stat_add( 13*(idm+2*nbdy)*(jdm+2*nbdy) )
+#endif
+                hcpp = r_init
+                hcpu = r_init
+                hcpv = r_init
+                 hcu = r_init
+                 hcv = r_init 
+             invhcpu = r_init
+             invhcpv = r_init
+              invhcu = r_init
+              invhcv = r_init
+               epspu = r_init
+               epspv = r_init
+                epsu = r_init
+                epsv = r_init
       
       end subroutine cb_allocate
 

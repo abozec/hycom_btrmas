@@ -1,9 +1,10 @@
-      subroutine bigrid(depth, mapflg, util1,util2,util3)
+      subroutine bigrid(depth, mapflg, dp_wet,util1,util2,util3)
       use mod_xc  ! HYCOM communication interface
       implicit none
 c
       real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) ::
      &        depth,util1,util2,util3
+      real    dp_wet
       integer mapflg
 c
 c --- set loop bounds for irregular basin in c-grid configuration
@@ -199,6 +200,13 @@ c --- start out with masks as land everywhere
           iq(i,j)=0
           iu(i,j)=0
           iv(i,j)=0
+!!Alex add wetting and drying
+          ip_w( i,j)=0
+          ip_nw(i,j)=0
+          iu_w( i,j)=0
+          iu_nw(i,j)=0
+          iv_w( i,j)=0
+          iv_nw(i,j)=0
         enddo
       enddo
 c
@@ -209,6 +217,10 @@ c --- mass points are defined where water depth is greater than zero
         do i=1-nbdy,ii+nbdy
           if (depth(i,j).gt.0.) then
             ip(i,j)=1
+c ---       wetting and drying candidates are a subset of sea points
+            if (depth(i,j).le.dp_wet) then
+              ip_w(i,j)=1
+            endif
           endif
         enddo
       enddo
@@ -250,6 +262,33 @@ c --- diametrically opposed) sides
           iq(i,j)=util3(i,j)
         enddo
       enddo
+c --- wetting and drying mask u and v
+!$OMP PARALLEL DO PRIVATE(j,i)
+!$OMP&         SCHEDULE(STATIC,jblk)
+      do j=1,jj
+        do i=1,ii
+          if (ip_w(i-1,j).gt.0 .and. ip_w(i,j).gt.0) then
+            iu_w(i,j)=1
+          endif
+          if (ip_w(i,j-1).gt.0 .and. ip_w(i,j).gt.0) then
+            iv_w(i,j)=1
+          endif
+          util1(i,j)=iu_w(i,j)
+          util2(i,j)=iv_w(i,j)
+        enddo
+      enddo
+      call xctilr(util1,1,1, nbdy,nbdy, halo_us)
+      call xctilr(util2,1,1, nbdy,nbdy, halo_vs)
+!$OMP PARALLEL DO PRIVATE(j,i)
+!$OMP&         SCHEDULE(STATIC,jblk)
+      do j= 1-nbdy,jj+nbdy
+        do i= 1-nbdy,ii+nbdy
+          iu_w(i,j)=util1(i,j)
+          iv_w(i,j)=util2(i,j)
+        enddo
+      enddo
+!$OMP PARALLEL DO PRIVATE(j,i)
+!$OMP&         SCHEDULE(STATIC,jblk)
 c
 c --- allow for non-periodic and non-arctic boundaries (part II).
       if     (.not.lfplane .and. j0.eq.0) then
@@ -259,6 +298,8 @@ c ---   south boundary is all land.
             iq(i,j) = 0
             iu(i,j) = 0
             iv(i,j) = 0
+            iu_w(i,j) = 0
+            iv_w(i,j) = 0
           enddo
         enddo
       endif
@@ -270,6 +311,8 @@ c ---   north boundary is all land.
             iq(i,j) = 0
             iu(i,j) = 0
             iv(i,j) = 0
+            iu_w(i,j) = 0
+            iv_w(i,j) = 0
           enddo
         enddo
       endif
@@ -281,6 +324,8 @@ c ---   west boundary is all land.
             iq(i,j) = 0
             iu(i,j) = 0
             iv(i,j) = 0
+            iu_w(i,j) = 0
+            iv_w(i,j) = 0
           enddo
         enddo
       endif
@@ -292,9 +337,20 @@ c ---   east boundary is all land.
             iq(i,j) = 0
             iu(i,j) = 0
             iv(i,j) = 0
+            iu_w(i,j) = 0
+            iv_w(i,j) = 0
           enddo
         enddo
       endif
+      
+      do j=1-nbdy,jj+nbdy
+        do i=1-nbdy,ii+nbdy          
+           ip_nw(i,j) = ip(i,j) - ip_w(i,j)
+           iu_nw(i,j) = iu(i,j) - iu_w(i,j)
+           iv_nw(i,j) = iv(i,j) - iv_w(i,j)
+
+        enddo
+      enddo
 c
 c --- logical alliX indicates entire row is sea
 !$OMP PARALLEL DO PRIVATE(j,i)
@@ -384,6 +440,20 @@ c --- determine loop indices for mass and velocity points
       call indxj(iu,jfu,jlu,jsu)
       call indxi(iv,ifv,ilv,isv)
       call indxj(iv,jfv,jlv,jsv)
+      
+      call indxi(ip_w,ifp_w,ilp_w,isp_w)
+      call indxj(ip_w,jfp_w,jlp_w,jsp_w)
+      call indxi(iu_w,ifu_w,ilu_w,isu_w)
+      call indxj(iu_w,jfu_w,jlu_w,jsu_w)
+      call indxi(iv_w,ifv_w,ilv_w,isv_w)
+      call indxj(iv_w,jfv_w,jlv_w,jsv_w)
+      
+      call indxi(ip_nw,ifp_nw,ilp_nw,isp_nw)
+      call indxj(ip_nw,jfp_nw,jlp_nw,jsp_nw)
+      call indxi(iu_nw,ifu_nw,ilu_nw,isu_nw)
+      call indxj(iu_nw,jfu_nw,jlu_nw,jsu_nw)
+      call indxi(iv_nw,ifv_nw,ilv_nw,isv_nw)
+      call indxj(iv_nw,jfv_nw,jlv_nw,jsv_nw)
 c
 c --- write out  -ip-  array, if it is not too big
 c --- data are written in strips nchar points wide
@@ -537,3 +607,4 @@ c> Nov  2000 - error stop on single-width inlets and 1-point seas
 c> Oct  2008 - warning    on single-width inlets
 c> May  2014 - added ipim1,ipip1,ipjm1,ipjp1,ipim1x,ipip1x,ipjm1x,ipjp1x
 c> May  2014 - added allip,alliq,alliu,alliv
+c> Apr  2016 - added dp_wet (ip_w, ip_nw, ...)

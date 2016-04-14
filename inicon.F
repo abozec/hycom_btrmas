@@ -29,7 +29,7 @@ c
       parameter (lpipe_inicon=.false.)
 c
       real      pinit,pk1p5,pmin(0:kdm),realat,cenlat,tempk,qdep
-      integer   i,j,k,k1,kkap,m,n
+      integer   i,j,k,k1,kkap,m,n,lhcp,margin
 cdiag character text*24
       character ptxt*12,utxt*12,vtxt*12
 c
@@ -554,6 +554,135 @@ c
       endif !test tile
       call xcsync(flush_lp)
 c
+
+c --- wetting and drying weighting coefficient !!Alex
+      if (dp_wet.ge.0.) then
+          margin = 2
+          do j = 1-margin,jj+margin
+            do i = 1-margin,ii+margin
+              if (SEA_P) then
+!!Bowl                  hcpp(i,j) = onem*sqrt( 0.01+0.04*( 
+                  hcpp(i,j) = onem*sqrt( 0.01+4.0*( 
+     &     max( float(ip(i-1,j))*abs(depths(i,j  )-depths(i-1,j)),
+     &          float(ip(i+1,j))*abs(depths(i+1,j)-depths(i  ,j)))**2.+
+     &     max( float(ip(i,j-1))*abs(depths(i,j  )-depths(i,j-1)),
+     &          float(ip(i,j+1))*abs(depths(i,j+1)-depths(i,j  )))**2.))
+              endif 
+            enddo
+          enddo
+c        
+          do lhcp=1,5
+c
+            do j = 1-margin,jj+margin
+              do i = 1-margin,ii+margin
+                if (SEA_P) then
+                    util1(i,j) = max(  hcpp(i,j),
+     &                float(ip(i-1,j))*hcpp(i-1,j),
+     &                float(ip(i+1,j))*hcpp(i+1,j),
+     &                float(ip(i,j-1))*hcpp(i,j-1),
+     &                float(ip(i,j+1))*hcpp(i,j+1) )
+                endif
+              enddo
+            enddo
+c
+            do j = 1-margin,jj+margin
+              do i = 1-margin,ii+margin
+                if (SEA_P) then
+                      hcpp(i,j) = sqrt( (  util1(i  ,j)**2.+
+     &                    float(ip(i-1,j))*util1(i-1,j)**2.+
+     &                    float(ip(i+1,j))*util1(i+1,j)**2.+
+     &                    float(ip(i,j-1))*util1(i,j-1)**2.+
+     &                    float(ip(i,j+1))*util1(i,j+1)**2.
+     &                    )/(
+     &                    1.+float(ip(i-1,j))+float(ip(i+1,j))+
+     &                    float(ip(i,j-1))+float(ip(i,j+1)) ) )
+                  endif 
+                enddo
+              enddo
+c
+              call xctilr(hcpp(1-nbdy,1-nbdy),1,1,nbdy,nbdy,halo_ps)
+c
+            enddo
+c
+            do j = 1-margin,jj+margin
+              do i = 1-margin,ii+margin
+                if (SEA_U) then
+                    hcpu(i,j) = max(hcpp(i,j),hcpp(i-1,j))
+                endif 
+              enddo
+            enddo
+c
+            do j = 1-margin,jj+margin
+              do i = 1-margin,ii+margin
+                if (SEA_V) then
+                    hcpv(i,j) = max(hcpp(i,j),hcpp(i,j-1))
+                endif 
+              enddo
+            enddo
+c
+            hcpp(:,:) = 4.*onem
+            hcpu(:,:) = hcpp(:,:)
+            hcpv(:,:) = hcpp(:,:)
+c
+            call xctilr(hcpu(1-nbdy,1-nbdy),1,1,nbdy,nbdy,halo_uv)
+            call xctilr(hcpv(1-nbdy,1-nbdy),1,1,nbdy,nbdy,halo_vv)
+c
+            margin = nbdy
+            do j = 1-margin,jj+margin
+              do i = 1-margin,ii+margin
+                if (SEA_U) then
+                    hcu(i,j) = hcpu(i,j)
+                    invhcpu(i,j) = 1./hcpu(i,j)
+                    invhcu(i,j)  = 1./hcu(i,j)
+                    epsu(i,j)  = 0.01*hcu(i,j)
+                    epspu(i,j) = 0.01*hcpu(i,j)
+                endif
+              enddo
+            enddo
+c
+            do j = 1-margin,jj+margin
+              do i = 1-margin,ii+margin
+                if (SEA_V) then
+                    hcv(i,j) = hcpv(i,j)
+                    invhcpv(i,j) = 1./hcpv(i,j)
+                    invhcv(i,j)  = 1./hcv(i,j)
+                    epsv(i,j)  = 0.01*hcv(i,j)
+                    epspv(i,j) = 0.01*hcpv(i,j)
+                endif 
+              enddo
+            enddo
+            call xctilr(hcu(1-nbdy,1-nbdy),1,1,nbdy,nbdy,halo_uv)
+            call xctilr(hcv(1-nbdy,1-nbdy),1,1,nbdy,nbdy,halo_vv)
+            call xctilr(invhcu(1-nbdy,1-nbdy),1,1,nbdy,nbdy,halo_uv)
+            call xctilr(invhcv(1-nbdy,1-nbdy),1,1,nbdy,nbdy,halo_vv)
+            call xctilr(invhcpu(1-nbdy,1-nbdy),1,1,nbdy,nbdy,halo_uv)
+            call xctilr(invhcpv(1-nbdy,1-nbdy),1,1,nbdy,nbdy,halo_vv)
+            call xctilr(epsu(1-nbdy,1-nbdy),1,1,nbdy,nbdy,halo_uv)
+            call xctilr(epsv(1-nbdy,1-nbdy),1,1,nbdy,nbdy,halo_vv)
+            call xctilr(epspu(1-nbdy,1-nbdy),1,1,nbdy,nbdy,halo_uv)
+            call xctilr(epspv(1-nbdy,1-nbdy),1,1,nbdy,nbdy,halo_vv)
+            
+        else
+c These parameters have to be carefully chosen, depending on topography
+c Still ongoing studies to tune these parameters
+            hcpp(:,:)    = 0.5*onem ! (used to be h1 in momtum)
+!          hcpp(:,:)    = 2.0*onem
+            hcpu(:,:)    = hcpp(:,:)
+            hcpv(:,:)    = hcpp(:,:)
+            hcu(:,:)     = hcpu(:,:)
+            hcv(:,:)     = hcpv(:,:)
+            invhcpu(:,:) = 1.0/hcpu(:,:)
+            invhcpv(:,:) = 1.0/hcpv(:,:)
+            invhcu(:,:)  = 1.0/hcu(:,:)
+            invhcv(:,:)  = 1.0/hcv(:,:)
+            epspu(:,:)   = 0.01*hcpu(:,:)
+            epspv(:,:)   = 0.01*hcpv(:,:)
+            epsu(:,:)    = 0.01*hcu(:,:)
+            epsv(:,:)    = 0.01*hcv(:,:)
+        endif
+
+
+
       return
       end
 c

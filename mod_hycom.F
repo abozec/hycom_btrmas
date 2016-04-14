@@ -2174,6 +2174,7 @@ c
               call xctmr1(54)
         endif ! full insertion of update
       endif
+
 #if defined(USE_ESMF)
 c
 c --- Fill the Export State with the initial fields.
@@ -2528,43 +2529,52 @@ c
         call rdnest(dtime)
       endif
 c
-         call pipe_comparall(n,m, 'ENTERm, step')
-         call pipe_comparall(m,n, 'ENTERn, step')
-         call xctmr0(40)
+        call pipe_comparall(n,m, 'ENTERm, step')
+        call pipe_comparall(m,n, 'ENTERn, step')
+        call xctmr0(40)
+ccc      if (num_model.eq.2.and.nstep.eq.1428) call checksum('be. cnuity',m,n)
       call cnuity(m,n)
-         call xctmr1(40)
-         call pipe_comparall(m,n, 'cnuity, step')
-
+ccc      if (num_model.eq.2.and.nstep.eq.1428) call checksum('af. cnuity',m,n)
+        call xctmr1(40)
+        call pipe_comparall(m,n, 'cnuity, step')
+      
 !         call xctmr0(41)
 !      call tsadvc(m,n)
 !         call xctmr1(41)
 !         call pipe_comparall(m,n, 'tsadvc, step')
-
-         call xctmr0(42)
-      if     (momtyp.eq.2) then
-        call momtum(m,n)
-      else   !momtyp.eq.4
-        call momtum4(m,n)
-      endif
-         call xctmr1(42)
-         call pipe_comparall(m,n, 'momtum, step')
-         call xctmr0(43)
-
+      
+        call xctmr0(42)
+        if     (momtyp.eq.2) then
+      call momtum(m,n)
+        else                      !momtyp.eq.4
+      call momtum4(m,n)
+        endif
+ccc      if (num_model.eq.2.and.nstep.eq.1428) call checksum('af. momtum',m,n)
+        call xctmr1(42)
+        call pipe_comparall(m,n, 'momtum, step')
+        call xctmr0(43)
+      
 *      do k = 1, kk
 *         write(6,*)'k=',k
 *         call check_field_cstlon_ok(u(1-nbdy,1-nbdy,k,n),2,'uapmom')
 *         call check_field_cstlon_ok(v(1-nbdy,1-nbdy,k,n),3,'vapmom')
 *         call check_field_cstlon_ok(dp(1-nbdy,1-nbdy,k,n),1,'papmom')
 *      enddo
-
-      call barotp(m,n)
+      
+      if (dp_wet.lt.0.0)then
+        call barotp(m,n)
+      else
+        call barotp_dry_and_nodry(m,n)
+      endif
+ccc      if (num_model.eq.2.and.nstep.eq.1428) call checksum('af. barotp',m,n)
          call xctmr1(43)
          call pipe_comparall(m,n, 'barotp, step')
-
+      
          call xctmr0(41)
       call tsadvc(m,n)
          call xctmr1(41)
          call pipe_comparall(m,n, 'tsadvc, step')
+ccc      if (num_model.eq.2.and.nstep.eq.1428) call checksum('af. tsadvc',m,n)
 
          call xctmr0(44)
 #if defined(USE_CCSM3)
@@ -2600,6 +2610,7 @@ c
             call xctmr1(45)
             call pipe_comparall(m,n, 'thermi, step') !thermf_oi
       endif !icegln:icecpl:else
+ccc      if (num_model.eq.2.and.nstep.eq.1428) call checksum('af. thermf',m,n)
 #endif /* USE_CCSM3:else */
       if (trcout) then
            call xctmr0(50)
@@ -2673,6 +2684,7 @@ c
         endif ! incremental update
            call xctmr0(49)
         call hybgen(m,n, hybraf)
+ccc      if (num_model.eq.2.and.nstep.eq.1428) call checksum('af. hybgen',m,n)
            call xctmr1(49)
            call pipe_comparall(m,n, 'hybgen, step')
       else  ! isopyc
@@ -3902,6 +3914,101 @@ c
 #endif
       end subroutine HYCOM_Final
 #endif /* USE_ESMF:else */
+
+c--------------------------------------------------------------------
+c
+      subroutine checksum(car10,m,n)
+      use mod_xc        ! HYCOM communication interface
+      use mod_za        ! HYCOM I/O interface
+      use mod_pipe      ! HYCOM debugging interface
+      use mod_cb_arrays ! HYCOM saved arrays
+      implicit none
+C
+C
+      character*10 car10
+      real x1, x2
+      integer m, n, k
+c
+       x2 = 0.
+       do k = 1, kk
+          call xcsum(x1,u(1-nbdy,1-nbdy,k,m),iu)
+          x2 = x2 + x1
+       enddo
+       if (mnproc.eq.1) write(6,*)trim(car10),'sum u(m) =',x2
+       x2 = 0.
+       do k = 1, kk
+          call xcsum(x1,u(1-nbdy,1-nbdy,k,n),iu)
+          x2 = x2 + x1
+       enddo
+       if (mnproc.eq.1) write(6,*)trim(car10),'sum u(n) =',x2
+c
+       x2 = 0.
+       do k = 1, kk
+          call xcsum(x1,v(1-nbdy,1-nbdy,k,m),iv)
+          x2 = x2 + x1
+       enddo
+       if (mnproc.eq.1) write(6,*)trim(car10),'sum v(m) =',x2
+       x2 = 0.
+       do k = 1, kk
+          call xcsum(x1,v(1-nbdy,1-nbdy,k,n),iv)
+          x2 = x2 + x1
+       enddo
+       if (mnproc.eq.1) write(6,*)trim(car10),'sum v(n) =',x2
+c
+       x2 = 0.
+       do k = 1, kk
+          call xcsum(x1,dp(1-nbdy,1-nbdy,k,m),ip)
+          x2 = x2 + x1
+       enddo
+       if (mnproc.eq.1) write(6,*)trim(car10),'sum dp(m) =',x2
+       x2 = 0.
+       do k = 1, kk
+          call xcsum(x1,dp(1-nbdy,1-nbdy,k,n),ip)
+          x2 = x2 + x1
+       enddo
+       if (mnproc.eq.1) write(6,*)trim(car10),'sum dp(n) =',x2
+c
+       x2 = 0.
+       do k = 1, kk
+          call xcsum(x1,temp(1-nbdy,1-nbdy,k,m),ip)
+          x2 = x2 + x1
+       enddo
+       if (mnproc.eq.1) write(6,*)trim(car10),'sum temp(m) =',x2
+       x2 = 0.
+       do k = 1, kk
+          call xcsum(x1,temp(1-nbdy,1-nbdy,k,n),ip)
+          x2 = x2 + x1
+       enddo
+       if (mnproc.eq.1) write(6,*)trim(car10),'sum temp(n) =',x2
+c
+       x2 = 0.
+       do k = 1, kk
+          call xcsum(x1,saln(1-nbdy,1-nbdy,k,m),ip)
+          x2 = x2 + x1
+       enddo
+       if (mnproc.eq.1) write(6,*)trim(car10),'sum saln(m) =',x2
+       x2 = 0.
+       do k = 1, kk
+          call xcsum(x1,saln(1-nbdy,1-nbdy,k,n),ip)
+          x2 = x2 + x1
+       enddo
+       if (mnproc.eq.1) write(6,*)trim(car10),'sum saln(n) =',x2
+c
+       call xcsum(x1,pbavg(1-nbdy,1-nbdy,n),ip)
+       if (mnproc.eq.1) write(6,*)trim(car10),'sum pbavg(n) =',x1
+       call xcsum(x1,pbavg(1-nbdy,1-nbdy,n),ip)
+       if (mnproc.eq.1) write(6,*)trim(car10),'sum pbavg(m) =',x1
+       call xcsum(x1,ubavg(1-nbdy,1-nbdy,n),iu)
+       if (mnproc.eq.1) write(6,*)trim(car10),'sum ubavg(n) =',x1
+       call xcsum(x1,ubavg(1-nbdy,1-nbdy,m),iu)
+       if (mnproc.eq.1) write(6,*)trim(car10),'sum ubavg(m) =',x1
+       call xcsum(x1,vbavg(1-nbdy,1-nbdy,n),iv)
+       if (mnproc.eq.1) write(6,*)trim(car10),'sum vbavg(n) =',x1
+       call xcsum(x1,vbavg(1-nbdy,1-nbdy,m),iv)
+       if (mnproc.eq.1) write(6,*)trim(car10),'sum vbavg(m) =',x1
+c
+       return
+       end subroutine checksum
 
       end module mod_hycom
 c
