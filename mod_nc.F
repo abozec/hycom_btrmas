@@ -7,7 +7,8 @@
       include 'netcdf.inc'
 
 !---  Module to output Netcdf variable (debug purposes) ---
-     
+
+
       contains
 
       subroutine ncput_2d(var_nc2d,var_name,file_name)
