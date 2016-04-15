@@ -31,8 +31,6 @@ c
         call latbdt( 0,0)
       elseif (lbflag.eq.4) then
           call latbdtf(0,0)
-      elseif (rivrtr.eq.1) then
-          call latbdt_river(0,0) !!Alex river
       else
 !$OMP PARALLEL DO PRIVATE(j,i)
 !$OMP&         SCHEDULE(STATIC,jblk)
@@ -43,7 +41,10 @@ c
           enddo
         enddo
       endif
+      if (rivrtr.eq.1) call latbdt_river(0,0) !!Alex river
 c
+
+      
       call xctilr(pbot, 1,1, nbdy,nbdy, halo_ps)
       call xctilr(corio,1,1, nbdy,nbdy, halo_qs)
 c
