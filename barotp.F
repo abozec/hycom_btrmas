@@ -263,7 +263,7 @@ c
                 if (iuopn(i,j).ne.0) then
 !!Alex river                   flxloc(i,j) = ubavg(i,j,ml)*(depthu(i,j)*scuy(i,j))
                     flxloc(i,j) = ubavg(i,j,ml)*scuy(i,j)*
-     &                 max(0.,pbot(i,j)*onetai(i,j)+pbavg(i,j,ml))               
+     &                 max(0.,pbot(i,j)*onetai(i,j)+pbsavu(i,j))               
                     uflxba(i,j) = uflxba(i,j) +
      &                  coeflx(lll+1,icof)*(1.0+wblpf)*flxloc(i,j)
                 endif !iuopn
@@ -273,7 +273,7 @@ c
                 if (iuopn(i,j).ne.0) then
 !!Alex river                   flxloc(i,j) = ubavg(i,j,ml)*(depthu(i,j)*scuy(i,j))
                     flxloc(i,j) = ubavg(i,j,ml)*scuy(i,j)*
-     &                 max(0.,pbot(i-1,j)*onetai(i-1,j)+pbavg(i-1,j,ml))            
+     &                 max(0.,pbot(i-1,j)*onetai(i-1,j)+pbsavu(i,j))            
                     uflxba(i,j) = uflxba(i,j) +
      &                  coeflx(lll+1,icof)*(1.0+wblpf)*flxloc(i,j)
                 endif !iuopn
@@ -295,7 +295,7 @@ c
                 if (ivopn(i,j).ne.0) then
 !!Alex river                   flyloc(i,j) = vbavg(i,j,ml)*(depthv(i,j)*scvx(i,j))
                     flyloc(i,j) = vbavg(i,j,ml)*scvx(i,j)*
-     &                 max(0.,pbot(i,j)*onetai(i,j)+pbavg(i,j,ml))               
+     &                 max(0.,pbot(i,j)*onetai(i,j)+pbsavv(i,j))               
                     vflxba(i,j) = vflxba(i,j) +
      &                  coeflx(lll+1,icof)*(1.0+wblpf)*flyloc(i,j)
                 endif !ivopn
@@ -305,7 +305,7 @@ c
                 if (ivopn(i,j).ne.0) then
 !!Alex river                   flyloc(i,j) = vbavg(i,j,ml)*(depthv(i,j)*scvx(i,j))
                     flyloc(i,j) = vbavg(i,j,ml)*scvx(i,j)*
-     &                 max(0.,pbot(i,j-1)*onetai(i,j-1)+pbavg(i,j-1,ml))               
+     &                 max(0.,pbot(i,j-1)*onetai(i,j-1)+pbsavv(i,j))               
                     vflxba(i,j) = vflxba(i,j) +
      &                  coeflx(lll+1,icof)*(1.0+wblpf)*flyloc(i,j)
                 endif !ivopn

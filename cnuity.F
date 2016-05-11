@@ -106,6 +106,9 @@ c
 cCL/RB MPI bug correction 2011-01 !!Alex
       call xctilr(oneta(  1-nbdy,1-nbdy,  n),1, 1, 6,6, halo_ps)
       call xctilr(oneta(  1-nbdy,1-nbdy,  m),1, 1, 6,6, halo_ps)
+c --- update pbavg rivers
+      call xctilr(pbsavu( 1-nbdy,1-nbdy    ),1, 1, 6,6, halo_ps)
+      call xctilr(pbsavv( 1-nbdy,1-nbdy    ),1, 1, 6,6, halo_ps)
 c
 c --- rhs: dpmixl.n
 c --- lhs: util3, utotn, vtotn
@@ -162,7 +165,7 @@ c
 #endif                
                else
                   q=min(dp(i,j,k,n),max(0.,depthu(i+1,j)-util3(i,j)))
-     &             * (onetai(i,j) + pbavg(i,j,m) /pbot(i,j))
+     &             * (onetai(i,j) + pbsavu(i,j) /pbot(i,j))
      	          utotm(i,j)=ubavg(i,j,m)*scuy(i,j) ! no stock drift for rivers
                endif
                    
@@ -188,7 +191,7 @@ c --- flux used for river
                else
                    q=min(dp(i-1,j,k,n),max(0.,depthu(i-1,j)
      &                                       - util3(i-1,j)))
-     &             * (onetai(i-1,j) + pbavg(i-1,j,m) /pbot(i-1,j))
+     &             * (onetai(i-1,j) + pbsavu(i,j) /pbot(i-1,j))
                    utotm(i,j)=ubavg(i,j,m)*scuy(i,j) ! no stock drift for rivers
                endif
                 uflux(i,j)=utotm(i,j)*q
@@ -224,7 +227,7 @@ c
                else
                    q=min(dp(i,j  ,k,n),max(0.,depthv(i,j+1)
      &                                       - util3(i,j  )))
-     &             * (onetai(i,j) + pbavg(i,j,m) /pbot(i,j))
+     &             * (onetai(i,j) + pbsavv(i,j) /pbot(i,j))
                    vtotm(i,j)=vbavg(i,j,m)*scvx(i,j) ! no stock drift for rivers
                endif
                 vflux(i,j)=vtotm(i,j)*q
@@ -249,7 +252,7 @@ c --- flux used for river
                  else
                      q=min(dp(i,j-1,k,n),max(0.,depthv(i,j-1)
      &                                         - util3(i,j-1)))
-     &                 * (onetai(i,j-1) + pbavg(i,j-1,m) /pbot(i,j-1))
+     &                 * (onetai(i,j-1) + pbsavv(i,j) /pbot(i,j-1))
                      vtotm(i,j)=vbavg(i,j,m)*scvx(i,j) ! no stock drift for rivers
                  endif
                  vflux(i,j)=vtotm(i,j)*q

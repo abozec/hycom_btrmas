@@ -862,6 +862,14 @@ c --- T and S river !!Alex river
       real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy,kdm) ::
 #endif
      & triver, sriver ! T and S river
+
+c --- pbavg at river points
+#if defined(RELO)
+      real,save,allocatable, dimension(:,:) ::
+#else
+      real, dimension (1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy) ::
+#endif
+     & pbsavu, pbsavv
       
       contains
 
@@ -1616,6 +1624,15 @@ c --- T and S river !!Alex river
 #endif
                 triver = 0.0
                 sriver = 0.0
+c --- pbavg at river points
+#if defined(RELO)
+      allocate(
+     &          pbsavu(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy),
+     &          pbsavv(1-nbdy:idm+nbdy,1-nbdy:jdm+nbdy))
+      call mem_stat_add( 2*(idm+2*nbdy)*(jdm+2*nbdy) )
+#endif
+                pbsavu = 0.0
+                pbsavv = 0.0
       
       end subroutine cb_allocate
 

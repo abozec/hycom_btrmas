@@ -2798,7 +2798,11 @@ c ---           always use mass-conserving diagnostics
                 util2(i,j)=(srfhgt(i,j)/g)**2*scp2(i,j)
               endif
               util3(i,j)=srfhgt(i,j)*scp2(i,j)
-              util4(i,j)=montg1(i,j)*scp2(i,j)
+              if     (sshflg.ne.0) then
+                util4(i,j)=steric(i,j)*scp2(i,j)
+              else
+                util4(i,j)=montg1(i,j)*scp2(i,j)
+              endif !sshflg                  
               sminy(j)=min(sminy(j),srfhgt(i,j))
               smaxy(j)=max(smaxy(j),srfhgt(i,j))
             endif !ip
@@ -2825,20 +2829,32 @@ c       write(6,'(I3,I3,G25.17)')iumin3,jumin3,u3min
      &              ''  ('',1pe8.1,'' to '',e8.1,'')'')')
      &  nstep,c_ydh,
      &  sum/(area*thref*onemm),smin/(thref*onemm),smax/(thref*onemm)
-        write (lp,'(i9,a,
-     .              '' mean MontgPot (mm):'',f8.2)')
-     .  nstep,c_ydh,
-     .  smt/(area*thref*onemm)
-        call flush(lp)
         write(nod,'(i9,a,
      &              '' mean      SSH (mm):'',f8.2,
      &              ''  ('',1pe8.1,'' to '',e8.1,'')'')')
      &  nstep,c_ydh,
      &  sum/(area*thref*onemm),smin/(thref*onemm),smax/(thref*onemm)
-        write(nod,'(i9,a,
-     .              '' mean MontgPot (mm):'',f8.2)')
-     .  nstep,c_ydh,
-     .  smt/(area*thref*onemm)
+        if     (sshflg.ne.0) then
+c ---     Non-Steric (i.e. Total - Steric) SSH
+          write (lp,'(i9,a,
+     &                '' mean    nsSSH (mm):'',f8.2)')
+     &    nstep,c_ydh,
+     &    (sum-smt)/(area*thref*onemm)
+          write(nod,'(i9,a,
+     &                '' mean    nsSSH (mm):'',f8.2)')
+     &    nstep,c_ydh,
+     &    (sum-smt)/(area*thref*onemm)
+        else
+          write (lp,'(i9,a,
+     &                '' mean MontgPot (mm):'',f8.2)')
+     &    nstep,c_ydh,
+     &    smt/(area*thref*onemm)
+          write(nod,'(i9,a,
+     &                '' mean MontgPot (mm):'',f8.2)')
+     &    nstep,c_ydh,
+     &    smt/(area*thref*onemm)
+        endif !sshflg
+        call flush(lp)
         call flush(nod)
         endif !1st tile
 c ---   NaN detection.
@@ -4055,3 +4071,4 @@ c> Apr. 2014 - replace ip with ipa for mass sums, reduces need for jja
 c> May  2014 - use land/sea masks (e.g. ip) to skip land
 c> Feb. 2015 - removed dtime0 from calculation of dtime
 c> Feb. 2015 - fixed issues with bit for bit reproducability on restart
+c> May  2016 - Printout mean non-steric SSH (not MontgPot) when available

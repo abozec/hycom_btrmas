@@ -500,9 +500,9 @@ c
               else
                   if (i.ge.i0+1-nbdy.and.i.le.i0+ii+nbdy) then
                   do k = max(1-nbdy,j-j0), min(jj+nbdy,j-j0+lnport(l)-1)
-                      pline(k+j0) = depths(i-i0,k)
-                      rspedw(k+j0,ll1) = onetai(i-i0,k)
-                      xline(k+j0) = scuy(i-i0,k) !!Alex
+                      pline(k+j0)      = depths(i-i0,k)  
+                      rspedw(k+j0,ll1) = onetai(i-i0,k)  
+                      xline(k+j0)      = scuy(i-i0,k) !!Alex
                   enddo
                   endif
               endif
@@ -545,9 +545,9 @@ c
               else
                   if (i.ge.i0+1-nbdy.and.i.le.i0+ii+nbdy) then
                   do k = max(1-nbdy,j-j0), min(jj+nbdy,j-j0+lnport(l)-1)
-                    pline(k+j0) = depths(i-i0,k)
+                    pline(k+j0)      = depths(i-i0,k)
                     rspede(k+j0,ll1) = onetai(i-i0,k)
-                    xline(k+j0) = scuy(i+1-i0,k) !!Alex
+                    xline(k+j0)      = scuy(i+1-i0,k) !!Alex
 !RB                    xline(k+j0) = scuy(i-i0,k)
                   enddo
                   endif
@@ -591,9 +591,9 @@ c
               else
                   if (j.ge.j0+1-nbdy.and.j.le.j0+jj+nbdy) then
                   do k = max(1-nbdy,i-i0), min(ii+nbdy,i-i0+lnport(l)-1)
-                        pline(k+i0) = depths(k,j-j0)
+                        pline(k+i0)      = depths(k,j-j0)
                         rspedn(k+i0,ll1) = onetai(k,j-j0)
-                        xline(k+i0) = scvx(k,j+1-j0)  !!Alex
+                        xline(k+i0)      = scvx(k,j+1-j0)  !!Alex
 !RB                        xline(k+i0) = scvx(k,j-j0)  
                   enddo
                   endif
@@ -636,9 +636,9 @@ c
               else
                   if (j.ge.j0+1-nbdy.and.j.le.j0+jj+nbdy) then
                   do k = max(1-nbdy,i-i0), min(ii+nbdy,i-i0+lnport(l)-1)
-                        pline(k+i0) = depths(k,j-j0)
-                        rspeds(k+i0,ll1) = onetai(k,j-j0)
-                        xline(k+i0) = scvx(k,j-j0)  !!Alex
+                        pline(k+i0)      = depths(k,j-j0) 
+                        rspeds(k+i0,ll1) = onetai(k,j-j0) 
+                        xline(k+i0)      = scvx(k,j-j0)  !!Alex
                   enddo
                   endif
               endif
@@ -973,14 +973,14 @@ c
             j = jfport(l)
             if (boundary_mpi) then
                 call xclput(pline(j),  lnport(l),
-     &              pbavg(1-nbdy,1-nbdy,n), i,  j,  0,1)
+     &              pbsavu(1-nbdy,1-nbdy  ), i,  j,  0,1)
                 call xclput(uline(j,1),lnport(l),
-     &              ubavg(1-nbdy,1-nbdy,n), i,  j,  0,1) ! normal
+     &              ubavg (1-nbdy,1-nbdy,n), i,  j,  0,1) ! normal
             else
                 if (i.ge.i0+1-margin.and.i.le.i0+ii+margin) then
                  do k=max(1-margin,j-j0),min(jj+margin,j-j0+lnport(l)-1)
-                      pbavg(i-i0,k,n) = pline(k+j0)
-                      ubavg(i-i0,k,n) = uline(k+j0,1)
+                      pbsavu(i-i0,k  ) = pline(k+j0)  
+                      ubavg (i-i0,k,n) = uline(k+j0,1)
                  enddo
                 endif
             endif ! boundary_mpi
@@ -1073,24 +1073,16 @@ c
             endif ! rarwave
             j = jfport(l)
             if (boundary_mpi) then
-!RB               call xclput(pline(j),  lnport(l),
-!RB     &              pbavg(1-nbdy,1-nbdy,n), i+1,j,0,1)
-!RB                call xclput(uline(j,1),lnport(l),
-!RB     &              ubavg(1-nbdy,1-nbdy,n), i+1,j,0,1) ! normal
-
-                call xclput(pline(j),  lnport(l),
-     &              pbavg(1-nbdy,1-nbdy,n), i  ,j,0,1)
+               call xclput(pline(j),  lnport(l),
+     &              pbsavu(1-nbdy,1-nbdy  ), i+1,j,0,1)
                 call xclput(uline(j,1),lnport(l),
-     &              ubavg(1-nbdy,1-nbdy,n), i+1,j,0,1) ! normal
+     &              ubavg (1-nbdy,1-nbdy,n), i+1,j,0,1) ! normal
             else
                 if (i.ge.i0-margin.and.i+1.le.i0+ii+margin) then
                     do k=max(1 -margin,j-j0),
      &                   min(jj+margin,j-j0+lnport(l)-1)
-!RB                      pbavg(i+1-i0,k,n) = pline(k+j0)
-!RB                      ubavg(i+1-i0,k,n) = uline(k+j0,1)
-
-                      pbavg(i  -i0,k,n) = pline(k+j0)
-                      ubavg(i+1-i0,k,n) = uline(k+j0,1)
+                      pbsavu(i+1-i0,k  ) = pline(k+j0)
+                      ubavg (i+1-i0,k,n) = uline(k+j0,1)
                     enddo
                 endif
             endif ! boundary_mpi
@@ -1181,24 +1173,16 @@ c
             endif ! rarwave
             i = ifport(l)
             if (boundary_mpi) then
-!RB                call xclput(pline(i),  lnport(l),
-!RB     &              pbavg(1-nbdy,1-nbdy,n), i, j+1,1,0)
-!RB                call xclput(uline(i,1),lnport(l),
-!RB     &              vbavg(1-nbdy,1-nbdy,n), i, j+1,1,0) ! normal
-
                 call xclput(pline(i),  lnport(l),
-     &              pbavg(1-nbdy,1-nbdy,n), i, j  ,1,0)
+     &              pbsavv(1-nbdy,1-nbdy  ), i, j+1,1,0)
                 call xclput(uline(i,1),lnport(l),
-     &              vbavg(1-nbdy,1-nbdy,n), i, j+1,1,0) ! normal
+     &              vbavg (1-nbdy,1-nbdy,n), i, j+1,1,0) ! normal
             else
                 if (j.ge.j0-margin.and.j+1.le.j0+jj+margin) then
                     do k=max(1 -margin,i-i0),
      &                   min(ii+margin,i-i0+lnport(l)-1)
-!RB                      pbavg(k,j+1-j0,n) = pline(k+i0)
-!RB                      vbavg(k,j+1-j0,n) = uline(k+i0,1)
-
-                      pbavg(k,j  -j0,n) = pline(k+i0)
-                      vbavg(k,j+1-j0,n) = uline(k+i0,1)
+                      pbsavv(k,j+1-j0  ) = pline(k+i0)
+                      vbavg (k,j+1-j0,n) = uline(k+i0,1)
                     enddo
                 endif
             endif ! boundary_mpi
@@ -1296,15 +1280,15 @@ c
             i = ifport(l)
             if (boundary_mpi) then
                 call xclput(pline(i),  lnport(l),
-     &              pbavg(1-nbdy,1-nbdy,n), i,  j, 1, 0)
+     &              pbsavv(1-nbdy,1-nbdy), i,  j, 1, 0)
                 call xclput(uline(i,1),lnport(l),
-     &              vbavg(1-nbdy,1-nbdy,n), i,  j, 1, 0) ! normal
+     &              vbavg (1-nbdy,1-nbdy,n), i,  j, 1, 0) ! normal
             else
                 if (j.ge.j0+1-margin.and.j.le.j0+jj+margin) then
                     do k=max(1 -margin,i-i0),
      &                   min(ii+margin,i-i0+lnport(l)-1)
-                      pbavg(k,j-j0,n) = pline(k+i0)
-                      vbavg(k,j-j0,n) = uline(k+i0,1)
+                      pbsavv(k,j-j0  ) = pline(k+i0)   
+                      vbavg (k,j-j0,n) = uline(k+i0,1)
                     enddo
                 endif
             endif ! boundary_mpi

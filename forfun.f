@@ -234,6 +234,7 @@ cdiag call prtmsk(ip,util1,util2,idm,idm,jdm,  0.,10.,
 cdiag.     'wind speed  (x 10 m/s)')
       endif !wndflg.lt.3
 c
+      if     (flxflg.ne.3) then
       call zaiopf(flnmfor(1:lgth)//'forcing.airtmp.a', 'old', 904)
       if     (mnproc.eq.1) then  ! .b file from 1st tile only
       open (unit=uoff+904,file=flnmfor(1:lgth)//'forcing.airtmp.b',
@@ -255,6 +256,7 @@ c
       call rdmonth(util1, 905)
 cdiag call prtmsk(ip,util1,util2,idm,idm,jdm,  0.,10000.,
 cdiag.     'mixing ratio  (0.1 g/kg)')
+      endif !flxflg.ne.3
 c
       if     (pcipf) then
         call zaiopf(flnmfor(1:lgth)//'forcing.precip.a', 'old', 906)
@@ -680,6 +682,7 @@ c
         call preambl_print(preambl)
         endif !wndflg.lt.3
 c
+        if     (flxflg.ne.3) then
         call zaiopf(flnmfor(1:lgth)//'forcing.airtmp.a', 'old', 904)
         if     (mnproc.eq.1) then  ! .b file from 1st tile only
         open (unit=uoff+904,file=flnmfor(1:lgth)//'forcing.airtmp.b',
@@ -695,7 +698,9 @@ c
         read (uoff+905,'(a79)') preambl
         endif !1st tile
         call preambl_print(preambl)
+        endif !flxflg.ne.3
 c
+        if     (pcipf) then
         call zaiopf(flnmfor(1:lgth)//'forcing.precip.a', 'old', 906)
         if     (mnproc.eq.1) then  ! .b file from 1st tile only
         open (unit=uoff+906,file=flnmfor(1:lgth)//'forcing.precip.b',
@@ -703,6 +708,7 @@ c
         read (uoff+906,'(a79)') preambl
         endif !1st tile
         call preambl_print(preambl)
+        endif !pcipf
 c
         call zaiopf(flnmfor(1:lgth)//'forcing.radflx.a', 'old', 907)
         if     (mnproc.eq.1) then  ! .b file from 1st tile only
@@ -2608,8 +2614,13 @@ c ---   taux,tauy contains wndx,wndy
      &                 taux(1-nbdy,1-nbdy,2),
      &                 tauy(1-nbdy,1-nbdy,2) )
       endif !wndspd
-      call rdpall1(airtmp,dtime(904),904,mod(icall,3).eq.1)
-      call rdpall1(vapmix,dtime(905),905,mod(icall,3).eq.1)
+      if     (flxflg.ne.3) then
+        call rdpall1(airtmp,dtime(904),904,mod(icall,3).eq.1)
+        call rdpall1(vapmix,dtime(905),905,mod(icall,3).eq.1)
+      else
+        dtime(904) = dtime(900)
+        dtime(905) = dtime(900)
+      endif
       if     (mslprf .or. flxflg.eq.6) then
         call rdpall1(mslprs,dtime(899),899,mod(icall,3).eq.2)
       else
@@ -2992,8 +3003,10 @@ c ---     taux,tauy contains wndx,wndy
      &                   taux(1-nbdy,1-nbdy,lslot),
      &                   tauy(1-nbdy,1-nbdy,lslot) )
         endif !wndspd
+        if     (flxflg.ne.3) then
         call rdmonthck(airtmp(1-nbdy,1-nbdy,lslot),904,mnth)
         call rdmonthck(vapmix(1-nbdy,1-nbdy,lslot),905,mnth)
+        endif
         if     (pcipf) then
           call rdmonthck(precip(1-nbdy,1-nbdy,lslot),906,mnth)
         endif
@@ -4351,3 +4364,4 @@ c> May  2014 - added forfunhz
 c> Oct  2014 - flxflg==6 requires mslprs input
 c> May  2015 - smooth msl pressure
 c> May  2015 - forcw0 for constant in time between inputs
+c> May  2016 - flxflg==3 does not read airtmp and vapmix
